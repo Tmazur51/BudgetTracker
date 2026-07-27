@@ -125,6 +125,13 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 .led .cell:hover { border-color:var(--line); }
 .led .cell:focus { outline:none; border-color:var(--brand); background:#fff; box-shadow:0 0 0 3px var(--brand-tint); }
 .led .cell.amt { font-family:var(--font-m); text-align:right; font-weight:500; }
+.led .excl { border:1px solid var(--line-2); background:#fff; color:var(--muted); cursor:pointer; font-size:13px; line-height:1; padding:4px 7px; border-radius:6px; }
+.led .excl:hover { border-color:var(--brand); color:var(--brand); }
+.led .excl.on { background:var(--brand); border-color:var(--brand); color:#fff; }
+.led tr.excluded .cell { opacity:.45; }
+.led tr.excluded .cell.amt { text-decoration:line-through; }
+.led .passhint { font-size:11.5px; color:var(--muted); background:var(--paper); border:1px solid var(--line); border-radius:10px; padding:10px 13px; margin:-2px 0 16px; line-height:1.55; }
+.led .passhint b { font-family:var(--font-m); font-weight:600; color:var(--ink-soft); }
 .led select.cell { -webkit-appearance:none; appearance:none; cursor:pointer;
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%2379888e' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
   background-repeat:no-repeat; background-position:right 6px center; padding-right:22px; }
@@ -222,7 +229,7 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V1.2</div>
+<div class="version">V1.3</div>
 <div id="root"><div class="boot">Loading Ledger…</div></div>
 
 <script>
@@ -306,6 +313,7 @@ async function cloudSave(uid, state) {
 const usd = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n || 0);
 const usd0 = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n || 0);
 const uid = () => Math.random().toString(36).slice(2, 9);
+const sumAmt = (rows) => rows.reduce((a, r) => a + (r.excluded ? 0 : toNum(r.amount)), 0);
 const toNum = (s) => { const v = parseFloat(String(s).replace(/[^0-9.\-]/g, "")); return isNaN(v) ? 0 : v; };
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -454,8 +462,8 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const cats = state.settings.categories;
   const goals = state.settings.goals;
 
-  const totalIncome = active.detailed ? active.income.reduce((a, r) => a + toNum(r.amount), 0) : active.summary.income;
-  const totalExpense = active.detailed ? active.expenses.reduce((a, r) => a + toNum(r.amount), 0) : active.summary.expense;
+  const totalIncome = active.detailed ? sumAmt(active.income) : active.summary.income;
+  const totalExpense = active.detailed ? sumAmt(active.expenses) : active.summary.expense;
   const cashFlow = totalIncome - totalExpense;
   const endBal = active.detailed ? (toNum(active.startingBalance) + cashFlow)
     : (active.endingBalance != null ? active.endingBalance : toNum(active.startingBalance) + cashFlow);
@@ -463,6 +471,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const actualByCat = {};
   cats.forEach((c) => (actualByCat[c] = 0));
   if (active.detailed) active.expenses.forEach((r) => {
+    if (r.excluded) return;
     if (actualByCat[r.category] === undefined) actualByCat[r.category] = 0;
     actualByCat[r.category] += toNum(r.amount);
   });
@@ -579,6 +588,10 @@ function BudgetLedger({ mode, session, onSignOut }) {
           </div>
         )}
 
+        {active.detailed && (
+          <div className="passhint">The <b>↔</b> button marks a row as pass-through — money that's reimbursed or just moving between accounts. Excluded rows drop out of your income, spending, category goals, and trends. For rent your parents pay you back for: log the rent and mark it ↔, then log their repayment and mark it ↔ too.</div>
+        )}
+
         <div className="panel">
           <div className="phead"><div className="t">Savings split</div><div className="hint">how this month's savings goal divides</div></div>
           <div className="split">
@@ -663,12 +676,13 @@ function IncomeTable({ rows, onEdit, onDel, onAdd, total }) {
     <React.Fragment>
       {rows.length === 0 ? (<div className="empty">No income logged yet. Add your first source below.</div>) : (
         <table className="ledgerT">
-          <thead><tr><th>Source</th><th className="r">Amount</th><th style={{ width: 34 }}></th></tr></thead>
+          <thead><tr><th>Source</th><th className="r">Amount</th><th style={{ width: 34 }}></th><th style={{ width: 34 }}></th></tr></thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id}>
+              <tr key={r.id} className={r.excluded ? "excluded" : ""}>
                 <td><input className="cell" value={r.source} onChange={(e) => onEdit("income", r.id, "source", e.target.value)} /></td>
                 <td className="r"><input className="cell amt" inputMode="decimal" value={r.amount} onChange={(e) => onEdit("income", r.id, "amount", e.target.value)} /></td>
+                <td><button className={"excl" + (r.excluded ? " on" : "")} onClick={() => onEdit("income", r.id, "excluded", !r.excluded)} title={r.excluded ? "Excluded from budget — tap to include" : "Exclude from budget (reimbursement / transfer)"} aria-label="Toggle exclude from budget">↔</button></td>
                 <td><button className="del" onClick={() => onDel("income", r.id)} aria-label="Delete">×</button></td>
               </tr>
             ))}
@@ -694,10 +708,10 @@ function ExpenseTable({ rows, cats, onEdit, onDel, onAdd, total }) {
     <React.Fragment>
       {rows.length === 0 ? (<div className="empty">No expenses logged yet. Add one below and pick its category.</div>) : (
         <table className="ledgerT">
-          <thead><tr><th>Item</th><th className="r">Amount</th><th>Category</th><th style={{ width: 34 }}></th></tr></thead>
+          <thead><tr><th>Item</th><th className="r">Amount</th><th>Category</th><th style={{ width: 34 }}></th><th style={{ width: 34 }}></th></tr></thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id}>
+              <tr key={r.id} className={r.excluded ? "excluded" : ""}>
                 <td><input className="cell" value={r.name} onChange={(e) => onEdit("expenses", r.id, "name", e.target.value)} /></td>
                 <td className="r"><input className="cell amt" inputMode="decimal" value={r.amount} onChange={(e) => onEdit("expenses", r.id, "amount", e.target.value)} /></td>
                 <td>
@@ -706,6 +720,7 @@ function ExpenseTable({ rows, cats, onEdit, onDel, onAdd, total }) {
                     {!cats.includes(r.category) && <option value={r.category}>{r.category}</option>}
                   </select>
                 </td>
+                <td><button className={"excl" + (r.excluded ? " on" : "")} onClick={() => onEdit("expenses", r.id, "excluded", !r.excluded)} title={r.excluded ? "Excluded from budget — tap to include" : "Exclude from budget (reimbursement / transfer)"} aria-label="Toggle exclude from budget">↔</button></td>
                 <td><button className="del" onClick={() => onDel("expenses", r.id)} aria-label="Delete">×</button></td>
               </tr>
             ))}
@@ -727,8 +742,8 @@ function Trends({ months, activeKey, onPick }) {
   const keys = Object.keys(months).sort();
   const data = keys.map((k) => {
     const m = months[k];
-    const inc = m.detailed ? m.income.reduce((a, r) => a + toNum(r.amount), 0) : m.summary.income;
-    const exp = m.detailed ? m.expenses.reduce((a, r) => a + toNum(r.amount), 0) : m.summary.expense;
+    const inc = m.detailed ? sumAmt(m.income) : m.summary.income;
+    const exp = m.detailed ? sumAmt(m.expenses) : m.summary.expense;
     return { k, label: m.label.split(" ")[0].slice(0, 3), inc, exp };
   });
   const max = Math.max(1, ...data.map((d) => Math.max(d.inc, d.exp)));
@@ -802,7 +817,7 @@ function MonthsModal({ existing, activeKey, onClose, onSelect, onDelete, onCreat
   const lastKey = keysAsc[keysAsc.length - 1];
   const lastEnd = lastKey
     ? (existing[lastKey].detailed
-        ? toNum(existing[lastKey].startingBalance) + existing[lastKey].income.reduce((a, r) => a + toNum(r.amount), 0) - existing[lastKey].expenses.reduce((a, r) => a + toNum(r.amount), 0)
+        ? toNum(existing[lastKey].startingBalance) + sumAmt(existing[lastKey].income) - sumAmt(existing[lastKey].expenses)
         : (existing[lastKey].endingBalance != null ? existing[lastKey].endingBalance : 0))
     : 0;
   const now = new Date();
@@ -832,8 +847,8 @@ function MonthsModal({ existing, activeKey, onClose, onSelect, onDelete, onCreat
           {keysDesc.map((k) => {
             const m = existing[k];
             const isActive = k === activeKey;
-            const inc = m.detailed ? m.income.reduce((a, r) => a + toNum(r.amount), 0) : m.summary.income;
-            const exp = m.detailed ? m.expenses.reduce((a, r) => a + toNum(r.amount), 0) : m.summary.expense;
+            const inc = m.detailed ? sumAmt(m.income) : m.summary.income;
+            const exp = m.detailed ? sumAmt(m.expenses) : m.summary.expense;
             return (
               <div className={"monthrow" + (isActive ? " active" : "")} key={k}>
                 <button className="monthpick" onClick={() => onSelect(k)}>
