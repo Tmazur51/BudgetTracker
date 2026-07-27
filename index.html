@@ -1,714 +1,753 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="IronLog">
-<meta name="theme-color" content="#14161B">
-<title>IronLog</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0e5b71" />
+<title>Ledger — Monthly Budget</title>
 <style>
-  :root {
-    --bg: #14161B;
-    --surface: #1C1F26;
-    --surface-2: #22262F;
-    --line: #2C313B;
-    --text: #E8EAF0;
-    --muted: #868D99;
-    --dim: #767D89;
-    --chalk: #F6F8FB;
-    --up: #3FB984;
-    --down: #D2953F;
-    --same: #868D99;
-    --focus: #6AA6FF;
-    --font-ui: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, sans-serif;
-    --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, "Cascadia Code", monospace;
-  }
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--font-ui);
-    -webkit-font-smoothing: antialiased;
-    line-height: 1.4;
-    padding:
-      max(16px, env(safe-area-inset-top))
-      max(16px, env(safe-area-inset-right))
-      max(28px, env(safe-area-inset-bottom))
-      max(16px, env(safe-area-inset-left));
-  }
-  .wrap { max-width: 520px; margin: 0 auto; }
+html, body { margin: 0; padding: 0; background: #eef2f1; }
+#root { min-height: 100vh; }
 
-  header {
-    display: flex; align-items: baseline; justify-content: space-between;
-    gap: 12px; padding: 4px 2px 20px;
-    border-bottom: 1px solid var(--line); margin-bottom: 22px;
-  }
-  .wordmark {
-    font-family: var(--font-mono); font-size: 14px; font-weight: 700;
-    letter-spacing: 0.28em; color: var(--chalk);
-  }
-  .wordmark .dot { color: var(--up); }
-  .today-date { font-size: 12.5px; color: var(--muted); text-align: right; }
+.led * { box-sizing: border-box; }
+.led {
+  --ink:#152329; --ink-soft:#3f545c; --muted:#79888e; --faint:#a7b3b7;
+  --line:#dde5e5; --line-2:#c8d4d4; --paper:#eef2f1; --card:#ffffff;
+  --brand:#0e5b71; --brand-2:#0a4557; --brand-tint:#e2eef2;
+  --green:#1f7a4d; --green-tint:#e4f1ea;
+  --red:#bd3a31; --red-tint:#f7e4e2;
+  --amber:#b3781d; --amber-tint:#f6ecd8;
+  --font-d:'Space Grotesk', system-ui, sans-serif;
+  --font-m:'JetBrains Mono','SF Mono', ui-monospace, monospace;
+  --font-b: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
-  .eyebrow {
-    font-size: 11px; font-weight: 600; letter-spacing: 0.16em;
-    text-transform: uppercase; color: var(--muted); margin: 0 2px 12px;
-  }
-  .section { margin-bottom: 30px; }
+  font-family: var(--font-b);
+  color: var(--ink);
+  background:
+    radial-gradient(120% 90% at 100% 0%, #f4f7f6 0%, var(--paper) 55%) fixed;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  padding: 22px 18px 60px;
+}
+.led .wrap { max-width: 1080px; margin: 0 auto; }
 
-  #banner {
-    display: none;
-    background: rgba(210, 149, 63, 0.10);
-    border: 1px solid rgba(210, 149, 63, 0.35);
-    color: var(--down); font-size: 12.5px; line-height: 1.45;
-    padding: 10px 12px; border-radius: 10px; margin-bottom: 20px;
-  }
-  #banner strong { color: #E9B466; font-weight: 600; }
+.num { font-family: var(--font-m); font-variant-numeric: tabular-nums; letter-spacing:-.02em; }
+.eyebrow { font-family: var(--font-d); text-transform: uppercase; letter-spacing:.14em; font-size:11px; font-weight:600; color: var(--muted); }
 
-  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
-  .card.pad { padding: 16px; }
-  form.add { padding: 16px 16px 18px; }
+.led .top {
+  display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+  padding-bottom:16px; border-bottom:1px solid var(--line-2); margin-bottom:22px;
+}
+.led .mark { display:flex; align-items:center; gap:11px; margin-right:auto; }
+.led .mark .logo {
+  width:34px; height:34px; border-radius:9px; background:var(--brand);
+  display:grid; place-items:center; box-shadow:0 2px 0 var(--brand-2);
+}
+.led .mark h1 {
+  font-family:var(--font-d); font-weight:700; font-size:19px; letter-spacing:.02em;
+  margin:0; line-height:1;
+}
+.led .mark p { margin:3px 0 0; font-size:11.5px; color:var(--muted); letter-spacing:.02em; }
 
-  .field { margin-bottom: 14px; }
-  .field:last-child { margin-bottom: 0; }
-  .field-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-  label {
-    display: block; font-size: 11px; letter-spacing: 0.06em;
-    text-transform: uppercase; color: var(--muted); margin-bottom: 6px;
-  }
-  .field-head label { margin-bottom: 0; }
+.led .ctrl { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.led select.month, .led .btn {
+  font-family:var(--font-d); font-weight:600; font-size:13.5px;
+  border:1px solid var(--line-2); background:var(--card); color:var(--ink);
+  padding:9px 13px; border-radius:9px; cursor:pointer; line-height:1;
+  transition:border-color .15s, background .15s, box-shadow .15s;
+}
+.led select.month { padding-right:30px; -webkit-appearance:none; appearance:none;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%2379888e' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat:no-repeat; background-position:right 11px center;
+}
+.led .btn:hover, .led select.month:hover { border-color:var(--brand); }
+.led .btn.primary { background:var(--brand); border-color:var(--brand); color:#fff; box-shadow:0 2px 0 var(--brand-2); }
+.led .btn.primary:hover { background:var(--brand-2); }
+.led .btn.ghost { border-color:var(--line); color:var(--ink-soft); }
+.led .btn.small { padding:7px 10px; font-size:12px; }
 
-  input[type="text"] {
-    width: 100%; min-height: 46px;
-    background: var(--surface-2); border: 1px solid var(--line);
-    border-radius: 10px; color: var(--text);
-    font-family: var(--font-ui); font-size: 16px; padding: 0 14px;
-  }
-  input.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: center; }
-  input::placeholder { color: #565D6A; }
-  input:focus-visible, button:focus-visible, select:focus-visible {
-    outline: 2px solid var(--focus); outline-offset: 2px;
-  }
+.led .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:22px; }
+.led .stat {
+  background:var(--card); border:1px solid var(--line); border-radius:13px;
+  padding:15px 16px 14px; position:relative; overflow:hidden;
+}
+.led .stat::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--line-2); }
+.led .stat.in::before { background:var(--brand); }
+.led .stat.out::before { background:var(--ink-soft); }
+.led .stat.flow.pos::before, .led .stat.end.pos::before { background:var(--green); }
+.led .stat.flow.neg::before, .led .stat.end.neg::before { background:var(--red); }
+.led .stat .lab { font-family:var(--font-d); text-transform:uppercase; letter-spacing:.12em; font-size:10.5px; font-weight:600; color:var(--muted); }
+.led .stat .val { font-family:var(--font-m); font-weight:600; font-size:25px; margin-top:7px; letter-spacing:-.03em; }
+.led .stat .val.pos { color:var(--green); }
+.led .stat .val.neg { color:var(--red); }
+.led .stat .sub { font-size:11px; color:var(--faint); margin-top:3px; }
 
-  .row3 { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 10px; }
+.led .panel { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px 18px 20px; margin-bottom:16px; }
+.led .phead { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:16px; }
+.led .phead .t { font-family:var(--font-d); font-weight:700; font-size:15px; letter-spacing:.01em; }
+.led .phead .hint { font-size:11.5px; color:var(--muted); }
 
-  /* segmented toggles (units, goal) */
-  .seg {
-    display: inline-flex; gap: 2px; background: var(--surface-2);
-    border: 1px solid var(--line); border-radius: 8px; padding: 2px;
-  }
-  .seg.full { display: flex; width: 100%; }
-  .seg button {
-    appearance: none; border: 0; background: transparent; color: var(--muted);
-    font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.03em;
-    padding: 6px 12px; border-radius: 6px; cursor: pointer; min-height: 32px;
-  }
-  .seg.full button { flex: 1; }
-  .seg button.on { background: var(--chalk); color: #14161B; font-weight: 600; }
+.led .meters { display:flex; flex-direction:column; gap:2px; }
+.led .meter { display:grid; grid-template-columns:96px 1fr 132px; align-items:center; gap:14px; padding:9px 0; border-top:1px dashed var(--line); }
+.led .meter:first-child { border-top:0; }
+.led .meter .cat { font-family:var(--font-d); font-weight:600; font-size:13px; }
+.led .meter .cat .pct { display:block; font-family:var(--font-m); font-size:10.5px; color:var(--faint); font-weight:500; margin-top:1px; }
+.led .track {
+  position:relative; height:16px; border-radius:8px;
+  background:var(--paper); border:1px solid var(--line); overflow:visible;
+}
+.led .track .fill { position:absolute; left:0; top:0; bottom:0; border-radius:7px 0 0 7px; }
+.led .track .fill.g { background:var(--brand); }
+.led .track .fill.gsave { background:var(--green); }
+.led .track .over { position:absolute; top:0; bottom:0; background:var(--red); border-radius:0 7px 7px 0; }
+.led .track .notch { position:absolute; top:-4px; bottom:-4px; width:2px; background:var(--ink); border-radius:1px; }
+.led .track .notch::after { content:""; position:absolute; top:-3px; left:-2px; width:6px; height:6px; border-radius:50%; background:var(--ink); }
+.led .meter .fig { text-align:right; }
+.led .meter .fig .amt { font-family:var(--font-m); font-size:12.5px; font-weight:600; }
+.led .meter .fig .amt .of { color:var(--faint); font-weight:400; }
+.led .chip { display:inline-block; font-family:var(--font-m); font-size:10.5px; font-weight:600; padding:2px 7px; border-radius:20px; margin-top:4px; }
+.led .chip.good { background:var(--green-tint); color:var(--green); }
+.led .chip.bad { background:var(--red-tint); color:var(--red); }
+.led .chip.warn { background:var(--amber-tint); color:var(--amber); }
 
-  .inline-row { display: flex; align-items: center; gap: 8px; }
-  .inline-row input.num { flex: 1; min-width: 0; }
-  #ht-metric input.num { width: 100%; }
-  .unit-lbl { color: var(--muted); font-size: 13px; font-family: var(--font-mono); }
+.led .cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.led table.ledgerT { width:100%; border-collapse:collapse; }
+.led table.ledgerT th { font-family:var(--font-d); text-transform:uppercase; letter-spacing:.1em; font-size:10px; font-weight:600; color:var(--muted); text-align:left; padding:0 8px 8px 0; }
+.led table.ledgerT th.r, .led table.ledgerT td.r { text-align:right; }
+.led table.ledgerT td { padding:3px 8px 3px 0; border-top:1px solid var(--line); }
+.led table.ledgerT tr:first-child td { border-top:0; }
+.led .cell {
+  width:100%; border:1px solid transparent; background:transparent; border-radius:7px;
+  font-family:var(--font-b); font-size:13px; color:var(--ink); padding:6px 8px; line-height:1.1;
+}
+.led .cell:hover { border-color:var(--line); }
+.led .cell:focus { outline:none; border-color:var(--brand); background:#fff; box-shadow:0 0 0 3px var(--brand-tint); }
+.led .cell.amt { font-family:var(--font-m); text-align:right; font-weight:500; }
+.led select.cell { -webkit-appearance:none; appearance:none; cursor:pointer;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%2379888e' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat:no-repeat; background-position:right 6px center; padding-right:22px; }
+.led .del { border:0; background:transparent; color:var(--faint); cursor:pointer; font-size:16px; line-height:1; padding:4px 6px; border-radius:6px; }
+.led .del:hover { color:var(--red); background:var(--red-tint); }
+.led .subtotal { display:flex; justify-content:space-between; align-items:baseline; margin-top:10px; padding-top:10px; border-top:2px solid var(--line-2); }
+.led .subtotal .l { font-family:var(--font-d); text-transform:uppercase; letter-spacing:.1em; font-size:10.5px; font-weight:600; color:var(--muted); }
+.led .subtotal .v { font-family:var(--font-m); font-weight:600; font-size:16px; }
+.led .addrow { display:flex; gap:6px; margin-top:12px; align-items:center; }
+.led .addrow input, .led .addrow select {
+  border:1px solid var(--line-2); border-radius:8px; padding:8px 9px; font-size:12.5px;
+  font-family:var(--font-b); background:#fff; color:var(--ink); min-width:0;
+}
+.led .addrow input:focus, .led .addrow select:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
+.led .addrow .fname { flex:1.4; }
+.led .addrow .famt { flex:.8; font-family:var(--font-m); text-align:right; }
+.led .addrow .fcat { flex:1; }
+.led .empty { color:var(--faint); font-size:12.5px; padding:14px 2px; font-style:italic; }
 
-  .btn-save {
-    background: var(--chalk); color: #14161B; border: 0; border-radius: 9px;
-    font-family: var(--font-ui); font-weight: 600; font-size: 13px;
-    padding: 0 16px; min-height: 46px; cursor: pointer; white-space: nowrap;
-  }
+.led .split { display:grid; grid-template-columns:1.1fr 1fr; gap:18px; align-items:center; }
+.led .splitbar { display:flex; height:44px; border-radius:11px; overflow:hidden; border:1px solid var(--line-2); }
+.led .splitbar .seg { display:flex; flex-direction:column; justify-content:center; padding:0 14px; color:#fff; }
+.led .splitbar .seg.roth { background:var(--brand-2); }
+.led .splitbar .seg.hysa { background:var(--brand); }
+.led .splitbar .seg .k { font-family:var(--font-d); font-size:10px; text-transform:uppercase; letter-spacing:.1em; opacity:.85; }
+.led .splitbar .seg .v { font-family:var(--font-m); font-weight:600; font-size:15px; }
+.led .splitnote { font-size:12.5px; color:var(--ink-soft); line-height:1.55; }
+.led .splitnote b { font-family:var(--font-m); font-weight:600; }
 
-  .hint {
-    font-family: var(--font-mono); font-size: 12.5px; color: var(--muted);
-    margin: 12px 2px 0; min-height: 16px;
-  }
-  .hint b { color: var(--text); font-weight: 600; }
+.led .chartwrap { width:100%; overflow:hidden; }
+.led .legend { display:flex; gap:16px; align-items:center; }
+.led .legend .k { display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-soft); }
+.led .legend .sw { width:11px; height:11px; border-radius:3px; }
 
-  .btn-primary {
-    appearance: none; width: 100%; min-height: 48px; margin-top: 16px;
-    background: var(--chalk); color: #14161B; border: 0; border-radius: 10px;
-    font-family: var(--font-ui); font-size: 15px; font-weight: 600;
-    cursor: pointer; transition: transform 0.06s ease;
-  }
-  .btn-primary:active { transform: scale(0.985); }
+.led .scrim { position:fixed; inset:0; background:rgba(21,35,41,.42); display:grid; place-items:center; padding:20px; z-index:50; }
+.led .modal { background:var(--card); border-radius:16px; padding:22px; width:100%; max-width:440px; box-shadow:0 24px 60px rgba(21,35,41,.28); max-height:90vh; overflow:auto; }
+.led .modal h3 { font-family:var(--font-d); font-weight:700; font-size:17px; margin:0 0 4px; }
+.led .modal .msub { font-size:12.5px; color:var(--muted); margin:0 0 18px; }
+.led .goalrow { display:grid; grid-template-columns:1fr 92px; gap:10px; align-items:center; padding:7px 0; border-top:1px dashed var(--line); }
+.led .goalrow:first-of-type { border-top:0; }
+.led .goalrow label { font-family:var(--font-d); font-weight:600; font-size:13px; }
+.led .goalrow .pctin { display:flex; align-items:center; gap:5px; border:1px solid var(--line-2); border-radius:8px; padding:5px 9px; background:#fff; }
+.led .goalrow .pctin:focus-within { border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
+.led .goalrow .pctin input { border:0; outline:none; width:100%; text-align:right; font-family:var(--font-m); font-size:13px; font-weight:600; background:transparent; color:var(--ink); }
+.led .goalrow .pctin span { color:var(--faint); font-family:var(--font-m); font-size:12px; }
+.led .goaltot { display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding-top:11px; border-top:2px solid var(--line-2); font-family:var(--font-d); font-weight:600; font-size:13px; }
+.led .goaltot .v { font-family:var(--font-m); }
+.led .goaltot .v.ok { color:var(--green); } .led .goaltot .v.off { color:var(--amber); }
+.led .field { margin-bottom:14px; }
+.led .field label { display:block; font-family:var(--font-d); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:6px; }
+.led .field .ri { display:flex; gap:10px; }
+.led .field input, .led .field select { flex:1; border:1px solid var(--line-2); border-radius:9px; padding:9px 11px; font-family:var(--font-b); font-size:13.5px; background:#fff; color:var(--ink); }
+.led .field input:focus, .led .field select:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
+.led .field input.num { font-family:var(--font-m); }
+.led .modactions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; flex-wrap:wrap; }
+.led .modactions .spacer { margin-right:auto; }
+.led .settings-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; }
 
-  /* body stats readout */
-  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
-  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 13px 14px; }
-  .stat .slabel { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
-  .stat .svalue { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 26px; font-weight: 700; color: var(--chalk); line-height: 1.1; }
-  .stat .ssub { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
-  .caveat { font-size: 11.5px; color: var(--dim); line-height: 1.45; margin: 10px 2px 0; }
+.led .loading { display:grid; place-items:center; min-height:50vh; color:var(--muted); font-family:var(--font-d); letter-spacing:.05em; }
 
-  /* progress chart */
-  .chart-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 2px 12px; }
-  .chart-latest { font-family: var(--font-mono); font-size: 12.5px; color: var(--text); }
-  select.chart-select {
-    background: var(--surface-2); border: 1px solid var(--line); color: var(--text);
-    font-family: var(--font-ui); font-size: 13px; padding: 7px 10px;
-    border-radius: 8px; min-height: 36px; max-width: 58%;
-  }
-  .chart-box { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 10px 6px; }
-  .chart-box svg { display: block; }
-
-  /* sessions */
-  .session { margin-bottom: 26px; }
-  .session-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 2px 10px; }
-  .session-date { font-size: 15px; font-weight: 600; color: var(--text); }
-  .session-date .rel { color: var(--muted); font-weight: 400; font-size: 12.5px; margin-left: 8px; }
-  .session-count { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
-
-  .entry { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 13px 14px; margin-bottom: 8px; }
-  .entry-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
-  .entry-name { font-size: 15.5px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .entry-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-  .chip { font-family: var(--font-mono); font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
-  .chip.up { color: var(--up); background: rgba(63, 185, 132, 0.12); }
-  .chip.down { color: var(--down); background: rgba(210, 149, 63, 0.12); }
-  .chip.same { color: var(--same); background: rgba(134, 141, 153, 0.12); }
-  .del { appearance: none; border: 0; background: transparent; color: #4E5560; font-size: 20px; line-height: 1; width: 30px; height: 30px; border-radius: 8px; cursor: pointer; transition: color 0.12s ease, background 0.12s ease; }
-  .del:hover { color: var(--down); background: var(--surface-2); }
-  .stats { font-family: var(--font-mono); font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 12px; color: var(--muted); font-size: 13.5px; }
-  .stats .weight { color: var(--chalk); font-size: 22px; font-weight: 700; }
-  .stats .x { color: #4E5560; }
-
-  .empty { text-align: center; color: var(--muted); font-size: 14px; padding: 26px 16px; border: 1px dashed var(--line); border-radius: 12px; }
-
-  footer { margin-top: 32px; padding-top: 18px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-  .footnote { font-size: 12px; color: #5A616D; }
-  .footnote b { color: var(--muted); font-weight: 500; }
-  .foot-actions { display: flex; gap: 8px; }
-  .btn-ghost { appearance: none; background: transparent; border: 1px solid var(--line); color: var(--muted); font-family: var(--font-ui); font-size: 12.5px; padding: 7px 12px; border-radius: 8px; cursor: pointer; min-height: 34px; }
-  .btn-ghost:hover { color: var(--text); border-color: #3A404C; }
-
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media (max-width:720px){
+  .led .stats { grid-template-columns:1fr 1fr; }
+  .led .cols { grid-template-columns:1fr; }
+  .led .split { grid-template-columns:1fr; }
+  .led .meter { grid-template-columns:80px 1fr; }
+  .led .meter .fig { grid-column:2; text-align:left; margin-top:-2px; }
+  .led .settings-grid { grid-template-columns:1fr; }
+}
 </style>
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <div class="wordmark">IRON<span class="dot">·</span>LOG</div>
-      <div class="today-date" id="today-date"></div>
-    </header>
+<div id="root"></div>
 
-    <div id="banner">
-      <strong>Preview mode.</strong> Storage is blocked here, so nothing is remembered
-      between reloads. On your phone everything saves automatically.
-    </div>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- LOG A SET -->
-    <section class="section">
-      <p class="eyebrow">Log a set</p>
-      <form class="add card" id="add-form" autocomplete="off">
-        <div class="field">
-          <label for="ex-name">Exercise</label>
-          <input type="text" id="ex-name" list="ex-list" placeholder="e.g. Back squat" required>
-          <datalist id="ex-list"></datalist>
-        </div>
-        <div class="field">
-          <div class="row3">
-            <div>
-              <label for="ex-weight">Weight</label>
-              <input type="text" id="ex-weight" class="num" inputmode="decimal" placeholder="—">
-            </div>
-            <div>
-              <label for="ex-reps">Reps</label>
-              <input type="text" id="ex-reps" class="num" inputmode="numeric" placeholder="8" required>
-            </div>
-            <div>
-              <label for="ex-sets">Sets</label>
-              <input type="text" id="ex-sets" class="num" inputmode="numeric" placeholder="3" required>
-            </div>
-          </div>
-          <div class="seg" id="unit-toggle" style="margin-top:8px;">
-            <button type="button" data-unit="lb">lb</button>
-            <button type="button" data-unit="kg">kg</button>
-          </div>
-        </div>
-        <div class="hint" id="hint"></div>
-        <button type="submit" class="btn-primary">Add to today</button>
-      </form>
-    </section>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
 
-    <!-- BODY & TARGETS -->
-    <section class="section">
-      <p class="eyebrow">Body &amp; targets</p>
-      <div class="card pad">
-        <div class="field">
-          <div class="field-head">
-            <label>Height</label>
-            <div class="seg" id="ht-toggle">
-              <button type="button" data-hunit="ft">ft/in</button>
-              <button type="button" data-hunit="cm">cm</button>
-            </div>
-          </div>
-          <div class="inline-row" id="ht-imperial">
-            <input type="text" id="ht-ft" class="num" inputmode="numeric" placeholder="5">
-            <span class="unit-lbl">ft</span>
-            <input type="text" id="ht-in" class="num" inputmode="numeric" placeholder="10">
-            <span class="unit-lbl">in</span>
-          </div>
-          <div id="ht-metric" style="display:none;">
-            <input type="text" id="ht-cm" class="num" inputmode="numeric" placeholder="178">
-          </div>
-        </div>
+const STORE_KEY = "ledger:v1";
 
-        <div class="field">
-          <div class="field-head">
-            <label>Body weight</label>
-            <div class="seg" id="bw-unit-toggle">
-              <button type="button" data-bunit="lb">lb</button>
-              <button type="button" data-bunit="kg">kg</button>
-            </div>
-          </div>
-          <div class="inline-row">
-            <input type="text" id="bw-input" class="num" inputmode="decimal" placeholder="—">
-            <button type="button" class="btn-save" id="bw-save">Save weight</button>
-          </div>
-        </div>
-
-        <div class="field">
-          <label>Goal (sets your protein target)</label>
-          <div class="seg full" id="goal-toggle">
-            <button type="button" data-goal="maintain">Maintain</button>
-            <button type="button" data-goal="build">Build</button>
-            <button type="button" data-goal="cut">Lose fat</button>
-          </div>
-        </div>
-
-        <div class="empty" id="body-empty" style="display:none;">
-          Add your height and weight to see your BMI and protein target.
-        </div>
-        <div class="stat-grid" id="body-stats" style="display:none;">
-          <div class="stat">
-            <div class="slabel">BMI</div>
-            <div class="svalue" id="stat-bmi">—</div>
-            <div class="ssub" id="stat-bmi-cat"></div>
-          </div>
-          <div class="stat">
-            <div class="slabel">Protein / day</div>
-            <div class="svalue" id="stat-protein">—</div>
-            <div class="ssub"><span id="stat-protein-basis"></span> · grams</div>
-          </div>
-        </div>
-        <div class="caveat" id="bmi-caveat" style="display:none;">
-          BMI ignores muscle — if you lift, it can read high even when you're lean.
-          Treat it as a rough reference, not a verdict.
-        </div>
-      </div>
-    </section>
-
-    <!-- PROGRESS -->
-    <section class="section">
-      <p class="eyebrow">Progress</p>
-      <div class="chart-head">
-        <select class="chart-select" id="chart-select"></select>
-        <span class="chart-latest" id="chart-latest"></span>
-      </div>
-      <div class="chart-box">
-        <div id="chart-svg"></div>
-        <div class="empty" id="chart-empty" style="display:none; border:0; padding:20px 8px;">
-          Log some data to see your progress here.
-        </div>
-      </div>
-    </section>
-
-    <!-- HISTORY -->
-    <section class="section">
-      <p class="eyebrow">History</p>
-      <div id="log"></div>
-    </section>
-
-    <footer>
-      <div class="footnote">Data lives <b id="storage-note">on this device</b>.</div>
-      <div class="foot-actions">
-        <button class="btn-ghost" id="export-btn">Export</button>
-        <button class="btn-ghost" id="import-btn">Import</button>
-        <input type="file" id="import-file" accept="application/json" hidden>
-      </div>
-    </footer>
-  </div>
-
-<script>
-"use strict";
-
-/* =========================================================================
-   1. STORAGE  (localStorage on your device; memory fallback for previews)
-   ========================================================================= */
-const Store = (() => {
-  let usable = false; const mem = {};
-  try { const t = "__il_test__"; localStorage.setItem(t, "1"); localStorage.removeItem(t); usable = true; }
-  catch (e) { usable = false; }
-  return {
-    usable,
-    load(key) { try { const raw = usable ? localStorage.getItem(key) : mem[key]; return raw ? JSON.parse(raw) : null; } catch (e) { return null; } },
-    save(key, val) { const raw = JSON.stringify(val); try { if (usable) localStorage.setItem(key, raw); else mem[key] = raw; } catch (e) { mem[key] = raw; } }
-  };
-})();
-
-const K_ENTRIES = "ironlog.entries";
-const K_BODY = "ironlog.body";
-
-let entries = Store.load(K_ENTRIES) || [];
-let body = Object.assign(
-  { heightCm: null, heightUnit: "ft", weightUnit: "lb", goal: "build", weights: [] },
-  Store.load(K_BODY) || {}
-);
-if (!Array.isArray(body.weights)) body.weights = [];
-
-let chartSel = "__bw__";
-
-const saveEntries = () => Store.save(K_ENTRIES, entries);
-const saveBody = () => Store.save(K_BODY, body);
-
-/* =========================================================================
-   2. HELPERS
-   ========================================================================= */
-const LB = 2.20462;                       // lb per kg
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-const norm = (s) => s.trim().toLowerCase();
-const round1 = (n) => Math.round(n * 10) / 10;
-
-function todayISO() {
-  const d = new Date();
-  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 10);
-}
-function makeDate(iso) { const [y, m, dd] = iso.split("-").map(Number); return new Date(y, m - 1, dd); }
-const fmtShort = (iso) => makeDate(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-const fmtFull = (iso) => makeDate(iso).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-
-function relativeLabel(iso) {
-  const t = todayISO();
-  if (iso === t) return "Today";
-  const diff = Math.round((makeDate(t) - makeDate(iso)) / 86400000);
-  if (diff === 1) return "Yesterday";
-  if (diff > 1 && diff < 7) return diff + " days ago";
-  return "";
-}
-function latestWeightKg() {
-  if (!body.weights.length) return null;
-  return body.weights.slice().sort((a, b) => (a.date < b.date ? 1 : -1))[0].kg;
-}
-function bmiCat(b) {
-  if (b < 18.5) return "Underweight";
-  if (b < 25) return "Healthy range";
-  if (b < 30) return "Overweight";
-  return "Obese";
-}
-function goalLabel(g) { return g === "maintain" ? "Maintain" : g === "cut" ? "Lose fat" : "Build muscle"; }
-
-function lastEntryFor(name, beforeDate) {
-  const n = norm(name);
-  const m = entries.filter(e => norm(e.name) === n && e.date < beforeDate);
-  m.sort((a, b) => (a.date !== b.date ? (a.date < b.date ? 1 : -1) : b.ts - a.ts));
-  return m[0] || null;
-}
-function computeDelta(cur, prev) {
-  if (!prev) return null;
-  const cw = cur.weight, pw = prev.weight;
-  if (cw != null && pw != null) {
-    if (cw > pw) return { dir: "up", text: "+" + round1(cw - pw) + " " + cur.unit };
-    if (cw < pw) return { dir: "down", text: "\u2212" + round1(pw - cw) + " " + cur.unit };
-  }
-  if (cur.reps > prev.reps) return { dir: "up", text: "+" + (cur.reps - prev.reps) + " reps" };
-  if (cur.reps < prev.reps) return { dir: "down", text: "\u2212" + (prev.reps - cur.reps) + " reps" };
-  if (cur.sets > prev.sets) return { dir: "up", text: "+" + (cur.sets - prev.sets) + " sets" };
-  if (cur.sets < prev.sets) return { dir: "down", text: "\u2212" + (prev.sets - cur.sets) + " sets" };
-  return { dir: "same", text: "matched" };
-}
-function sessions() {
-  const map = new Map();
-  for (const e of entries) { if (!map.has(e.date)) map.set(e.date, []); map.get(e.date).push(e); }
-  const out = [...map.entries()].map(([date, es]) => ({ date, entries: es.slice().sort((a, b) => a.ts - b.ts) }));
-  out.sort((a, b) => (a.date < b.date ? 1 : -1));
-  return out;
-}
-function weightText(e) {
-  return e.weight == null ? '<span class="weight">BW</span>' : '<span class="weight">' + e.weight + '</span> ' + e.unit;
-}
-
-/* =========================================================================
-   3. CHART  (hand-drawn SVG — no libraries, works offline)
-   ========================================================================= */
-function buildChart(points, unit) {
-  if (!points.length) return "";
-  const W = 320, H = 180, padL = 40, padR = 12, padT = 16, padB = 26;
-  const plotW = W - padL - padR, plotH = H - padT - padB;
-  const vals = points.map(p => p.value);
-  let min = Math.min(...vals), max = Math.max(...vals);
-  if (min === max) { const p = Math.max(1, Math.abs(min) * 0.08); min -= p; max += p; }
-  else { const p = (max - min) * 0.12; min -= p; max += p; }
-  const n = points.length;
-  const X = i => (n === 1 ? padL + plotW / 2 : padL + (i / (n - 1)) * plotW);
-  const Y = v => padT + (1 - (v - min) / (max - min)) * plotH;
-
-  let grid = "";
-  [max, (max + min) / 2, min].forEach(t => {
-    const y = Y(t);
-    grid += '<line x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y.toFixed(1) + '" stroke="#2C313B" stroke-width="1"/>';
-    grid += '<text x="' + (padL - 6) + '" y="' + (y + 3.5).toFixed(1) + '" text-anchor="end" font-size="9" fill="#868D99" font-family="ui-monospace, monospace">' + round1(t) + '</text>';
-  });
-
-  const linePts = points.map((p, i) => X(i).toFixed(1) + "," + Y(p.value).toFixed(1)).join(" ");
-  const line = n > 1 ? '<polyline points="' + linePts + '" fill="none" stroke="#3FB984" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' : "";
-  const dots = points.map((p, i) => '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(p.value).toFixed(1) + '" r="3" fill="#F6F8FB" stroke="#14161B" stroke-width="1.5"/>').join("");
-
-  const xlabel = i => '<text x="' + X(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="9" fill="#868D99" font-family="ui-monospace, monospace">' + fmtShort(points[i].date) + '</text>';
-  let xl = "";
-  if (n === 1) xl = xlabel(0);
-  else { xl = xlabel(0) + xlabel(n - 1); if (n >= 3) xl += xlabel(Math.floor((n - 1) / 2)); }
-
-  return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" aria-label="progress chart">' + grid + line + dots + xl + '</svg>';
-}
-
-function currentSeries() {
-  const u = body.weightUnit;
-  if (chartSel === "__bw__") {
-    return body.weights.slice().sort((a, b) => (a.date < b.date ? -1 : 1))
-      .map(w => ({ date: w.date, value: round1(u === "kg" ? w.kg : w.kg * LB) }));
-  }
-  // per-exercise: top (max) weight lifted each day
-  const map = new Map();
-  entries.filter(e => e.name === chartSel && e.weight != null).forEach(e => {
-    const kg = e.unit === "kg" ? e.weight : e.weight / LB;
-    const disp = round1(u === "kg" ? kg : kg * LB);
-    const cur = map.get(e.date);
-    if (cur == null || disp > cur) map.set(e.date, disp);
-  });
-  return [...map.entries()].map(([date, value]) => ({ date, value })).sort((a, b) => (a.date < b.date ? -1 : 1));
-}
-
-/* =========================================================================
-   4. RENDER
-   ========================================================================= */
-function renderHistory() {
-  $("today-date").textContent = fmtFull(todayISO());
-  const names = [...new Set(entries.map(e => e.name))].sort();
-  $("ex-list").innerHTML = names.map(n => '<option value="' + esc(n) + '">').join("");
-  document.querySelectorAll("#unit-toggle button").forEach(b => b.classList.toggle("on", b.dataset.unit === (window.__exUnit || "lb")));
-
-  const log = $("log");
-  const data = sessions();
-  if (!data.length) {
-    log.innerHTML = '<div class="empty">No lifts logged yet.<br>Add your first set above to get started.</div>';
-    return;
-  }
-  log.innerHTML = data.map(s => {
-    const rel = relativeLabel(s.date);
-    const rows = s.entries.map(e => {
-      const d = computeDelta(e, lastEntryFor(e.name, s.date));
-      const chip = d ? '<span class="chip ' + d.dir + '">' + esc(d.text) + '</span>' : "";
-      return '<div class="entry"><div class="entry-top"><div class="entry-name">' + esc(e.name) + '</div>' +
-        '<div class="entry-right">' + chip + '<button class="del" data-id="' + e.id + '" aria-label="Delete">\u00d7</button></div></div>' +
-        '<div class="stats"><span>' + weightText(e) + '</span>' +
-        '<span><span class="x">\u00d7</span> ' + e.reps + ' reps</span>' +
-        '<span><span class="x">\u00d7</span> ' + e.sets + ' sets</span></div></div>';
-    }).join("");
-    return '<div class="session"><div class="session-head"><div class="session-date">' + fmtShort(s.date) +
-      (rel ? '<span class="rel">' + rel + '</span>' : "") + '</div>' +
-      '<div class="session-count">' + s.entries.length + (s.entries.length === 1 ? " lift" : " lifts") + '</div></div>' + rows + '</div>';
-  }).join("");
-}
-
-function updateHint() {
-  const name = $("ex-name").value.trim();
-  const hint = $("hint");
-  if (!name) { hint.innerHTML = ""; return; }
-  const prev = lastEntryFor(name, todayISO());
-  if (!prev) { hint.innerHTML = "First time logging this \u2014 sets the baseline."; return; }
-  const w = prev.weight == null ? "BW" : prev.weight + " " + prev.unit;
-  hint.innerHTML = "Last time \u00b7 <b>" + esc(w) + " \u00d7 " + prev.reps + " \u00d7 " + prev.sets + "</b> on " + fmtShort(prev.date);
-}
-
-function renderBody() {
-  const imp = body.heightUnit !== "cm";
-  $("ht-imperial").style.display = imp ? "flex" : "none";
-  $("ht-metric").style.display = imp ? "none" : "block";
-  document.querySelectorAll("#ht-toggle button").forEach(b => b.classList.toggle("on", b.dataset.hunit === (imp ? "ft" : "cm")));
-  if (body.heightCm != null) {
-    if (imp) { const t = Math.round(body.heightCm / 2.54); $("ht-ft").value = Math.floor(t / 12); $("ht-in").value = t % 12; }
-    else { $("ht-cm").value = Math.round(body.heightCm); }
-  }
-
-  document.querySelectorAll("#bw-unit-toggle button").forEach(b => b.classList.toggle("on", b.dataset.bunit === body.weightUnit));
-  const lw = latestWeightKg();
-  if (lw != null && document.activeElement !== $("bw-input")) {
-    $("bw-input").value = round1(body.weightUnit === "kg" ? lw : lw * LB);
-  }
-  document.querySelectorAll("#goal-toggle button").forEach(b => b.classList.toggle("on", b.dataset.goal === body.goal));
-
-  const haveH = body.heightCm != null && body.heightCm > 0;
-  const haveW = lw != null && lw > 0;
-  if (!haveH || !haveW) {
-    $("body-empty").style.display = "block";
-    $("body-stats").style.display = "none";
-    $("bmi-caveat").style.display = "none";
-    return;
-  }
-  $("body-empty").style.display = "none";
-  $("body-stats").style.display = "grid";
-  $("bmi-caveat").style.display = "block";
-
-  const m = body.heightCm / 100;
-  const bmi = lw / (m * m);
-  $("stat-bmi").textContent = bmi.toFixed(1);
-  $("stat-bmi-cat").textContent = bmiCat(bmi);
-
-  const mult = ({ maintain: [1.4, 1.8], build: [1.6, 2.2], cut: [1.8, 2.4] })[body.goal] || [1.6, 2.2];
-  $("stat-protein").textContent = Math.round(lw * mult[0]) + "\u2013" + Math.round(lw * mult[1]);
-  $("stat-protein-basis").textContent = goalLabel(body.goal);
-}
-
-function renderChartSelect() {
-  const names = [...new Set(entries.filter(e => e.weight != null).map(e => e.name))].sort();
-  const opts = ['<option value="__bw__">Body weight</option>'];
-  names.forEach(n => opts.push('<option value="' + esc(n) + '">' + esc(n) + '</option>'));
-  const sel = $("chart-select");
-  sel.innerHTML = opts.join("");
-  const valid = ["__bw__"].concat(names);
-  if (valid.indexOf(chartSel) === -1) chartSel = body.weights.length ? "__bw__" : (names[0] || "__bw__");
-  sel.value = chartSel;
-}
-
-function renderChart() {
-  const series = currentSeries();
-  const box = $("chart-svg"), latest = $("chart-latest"), u = body.weightUnit;
-  if (!series.length) {
-    box.innerHTML = ""; $("chart-empty").style.display = "block"; latest.textContent = ""; return;
-  }
-  $("chart-empty").style.display = "none";
-  box.innerHTML = buildChart(series, u);
-  const last = series[series.length - 1].value;
-  let txt = "Latest " + last + " " + u;
-  if (series.length > 1) {
-    const diff = round1(last - series[0].value);
-    if (diff !== 0) txt += "  \u00b7  " + (diff > 0 ? "+" : "\u2212") + Math.abs(diff) + " " + u + " since " + fmtShort(series[0].date);
-  }
-  latest.textContent = txt;
-}
-
-function renderAll() { renderHistory(); renderBody(); renderChartSelect(); renderChart(); }
-
-/* =========================================================================
-   5. ACTIONS
-   ========================================================================= */
-function addEntry(e) {
-  e.preventDefault();
-  const name = $("ex-name").value.trim();
-  const wRaw = $("ex-weight").value.trim();
-  const reps = parseInt($("ex-reps").value, 10);
-  const sets = parseInt($("ex-sets").value, 10);
-  if (!name) return;
-  if (!Number.isFinite(reps) || reps <= 0 || !Number.isFinite(sets) || sets <= 0) {
-    $("hint").innerHTML = '<span style="color:var(--down)">Reps and sets need to be whole numbers.</span>'; return;
-  }
-  let weight = null;
-  if (wRaw !== "") {
-    weight = parseFloat(wRaw);
-    if (!Number.isFinite(weight) || weight < 0) {
-      $("hint").innerHTML = '<span style="color:var(--down)">Weight should be a number (or blank for bodyweight).</span>'; return;
+/* ---------- storage: window.storage inside Claude, localStorage everywhere else ---------- */
+const store = {
+  async get(key) {
+    if (typeof window !== "undefined" && window.storage) {
+      try { const r = await window.storage.get(key); return r ? r.value : null; }
+      catch (e) { return null; }
     }
-  }
-  const unit = window.__exUnit || "lb";
-  entries.push({ id: uid(), date: todayISO(), name, weight, reps, sets, unit, ts: Date.now() });
-  saveEntries();
-  $("ex-name").value = ""; $("ex-weight").value = ""; $("ex-reps").value = ""; $("ex-sets").value = "";
-  $("hint").innerHTML = "";
-  renderAll();
-  $("ex-name").focus();
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  },
+  async set(key, val) {
+    if (typeof window !== "undefined" && window.storage) {
+      try { await window.storage.set(key, val); return; } catch (e) { /* fall through */ }
+    }
+    try { localStorage.setItem(key, val); } catch (e) { console.error("save failed", e); }
+  },
+};
+async function loadState() {
+  try { const v = await store.get(STORE_KEY); if (v) return JSON.parse(v); } catch (e) {}
+  return null;
 }
-function deleteEntry(id) {
-  const e = entries.find(x => x.id === id);
-  if (!e) return;
-  if (!confirm('Delete "' + e.name + '"?')) return;
-  entries = entries.filter(x => x.id !== id);
-  saveEntries(); renderAll();
-}
-function saveWeight() {
-  const raw = $("bw-input").value.trim();
-  if (raw === "") return;
-  const v = parseFloat(raw);
-  if (!Number.isFinite(v) || v <= 0) return;
-  const kg = body.weightUnit === "kg" ? v : v / LB;
-  const t = todayISO();
-  const ex = body.weights.find(w => w.date === t);
-  if (ex) ex.kg = kg; else body.weights.push({ date: t, kg });
-  saveBody(); renderBody(); renderChartSelect(); renderChart();
-}
-function saveHeight() {
-  if (body.heightUnit !== "cm") {
-    const ft = parseInt($("ht-ft").value, 10) || 0, inch = parseInt($("ht-in").value, 10) || 0;
-    const totalIn = ft * 12 + inch;
-    body.heightCm = totalIn > 0 ? totalIn * 2.54 : null;
-  } else {
-    const cm = parseFloat($("ht-cm").value);
-    body.heightCm = Number.isFinite(cm) && cm > 0 ? cm : null;
-  }
-  saveBody(); renderBody();
-}
-function exportData() {
-  const payload = { app: "ironlog", version: 2, entries, body };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+async function persist(state) { await store.set(STORE_KEY, JSON.stringify(state)); }
+
+/* ---------- helpers ---------- */
+const usd = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n || 0);
+const usd0 = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n || 0);
+const uid = () => Math.random().toString(36).slice(2, 9);
+const toNum = (s) => { const v = parseFloat(String(s).replace(/[^0-9.\-]/g, "")); return isNaN(v) ? 0 : v; };
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+/* ---------- backup / restore ---------- */
+function exportData(state) {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url; a.download = "ironlog-backup-" + todayISO() + ".json"; a.click();
+  a.href = url;
+  a.download = "ledger-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+  document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 }
-function importData(file) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const data = JSON.parse(reader.result);
-      if (Array.isArray(data)) { entries = data; }               // v1 backup (entries only)
-      else if (data && Array.isArray(data.entries)) {            // v2 backup
-        entries = data.entries;
-        if (data.body) body = Object.assign(body, data.body);
-      } else throw new Error("bad");
-      if (!Array.isArray(body.weights)) body.weights = [];
-      if (!confirm("Replace current data with this backup?")) return;
-      saveEntries(); saveBody(); renderAll();
-    } catch (err) { alert("That file couldn't be read as an IronLog backup."); }
+
+/* ---------- seed (from the spreadsheet) ---------- */
+function seedState() {
+  const goals = { Gas:0.07, Fun:0.07, Groceries:0.12, "Eating Out":0.07, Misc:0.05, Frisbee:0.04, Utilities:0.26, Savings:0.32 };
+  const categories = ["Gas","Fun","Groceries","Eating Out","Misc","Frisbee","Utilities","Savings"];
+  const hist = {
+    "2025-06": [3346.05, 2287.57, 1339.05, 2397.53],
+    "2025-07": [2870.86, 1616.94, 2397.53, 3651.45],
+    "2025-08": [3826.17, 2746.66, 3651.45, 4730.96],
+    "2025-09": [1126.23, 2771.24, 4898.15, 3253.14],
+    "2025-10": [1041.89, 1182.48, 3200.70, 3060.11],
+    "2025-11": [886.07, 1433.35, 3168.73, 2621.45],
+    "2025-12": [545.10, 713.46, 2415.95, 2247.59],
+    "2026-01": [1096.51, 1134.70, 1840.07, 1801.88],
   };
-  reader.readAsText(file);
+  const months = {};
+  Object.entries(hist).forEach(([key, arr]) => {
+    const inc = arr[0], exp = arr[1], start = arr[2], end = arr[3];
+    const parts = key.split("-");
+    months[key] = {
+      label: MONTH_NAMES[+parts[1] - 1] + " " + parts[0],
+      detailed: false,
+      summary: { income: inc, expense: exp },
+      startingBalance: start,
+      endingBalance: end,
+      income: [],
+      expenses: [],
+    };
+  });
+  months["2026-02"] = { label: "February 2026", detailed: true, startingBalance: 1801.88, income: [], expenses: [] };
+  return {
+    version: 1,
+    settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045 },
+    months,
+    activeMonth: "2026-02",
+  };
 }
 
-/* =========================================================================
-   6. WIRE IT UP
-   ========================================================================= */
-window.__exUnit = (entries[0] && entries[0].unit) || "lb";
+/* ============================================================ */
+function BudgetLedger() {
+  const [state, setState] = useState(null);
+  const [showGoals, setShowGoals] = useState(false);
+  const [showAddMonth, setShowAddMonth] = useState(false);
+  const fileRef = useRef(null);
 
-$("add-form").addEventListener("submit", addEntry);
-$("ex-name").addEventListener("input", updateHint);
-$("unit-toggle").addEventListener("click", (e) => {
-  const b = e.target.closest("button[data-unit]"); if (!b) return;
-  window.__exUnit = b.dataset.unit;
-  document.querySelectorAll("#unit-toggle button").forEach(x => x.classList.toggle("on", x === b));
-});
+  useEffect(() => {
+    let alive = true;
+    loadState().then((s) => { if (alive) setState(s || seedState()); });
+    return () => { alive = false; };
+  }, []);
 
-$("log").addEventListener("click", (e) => { const b = e.target.closest(".del"); if (b) deleteEntry(b.dataset.id); });
+  useEffect(() => { if (state) persist(state); }, [state]);
 
-$("ht-toggle").addEventListener("click", (e) => { const b = e.target.closest("button[data-hunit]"); if (!b) return; saveHeight(); body.heightUnit = b.dataset.hunit; saveBody(); renderBody(); });
-["ht-ft", "ht-in", "ht-cm"].forEach(id => $(id).addEventListener("change", saveHeight));
-$("bw-unit-toggle").addEventListener("click", (e) => { const b = e.target.closest("button[data-bunit]"); if (!b) return; body.weightUnit = b.dataset.bunit; saveBody(); renderBody(); renderChart(); });
-$("bw-save").addEventListener("click", saveWeight);
-$("goal-toggle").addEventListener("click", (e) => { const b = e.target.closest("button[data-goal]"); if (!b) return; body.goal = b.dataset.goal; saveBody(); renderBody(); });
+  const handleImport = (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!data || !data.months || !data.settings) { alert("That file doesn't look like a Ledger backup."); return; }
+        setState(data);
+        alert("Backup restored.");
+      } catch (err) { alert("Couldn't read that file — is it a Ledger backup JSON?"); }
+    };
+    reader.readAsText(f);
+    e.target.value = "";
+  };
 
-$("chart-select").addEventListener("change", (e) => { chartSel = e.target.value; renderChart(); });
+  if (!state) {
+    return (<div className="led"><div className="loading">Loading your ledger…</div></div>);
+  }
 
-$("export-btn").addEventListener("click", exportData);
-$("import-btn").addEventListener("click", () => $("import-file").click());
-$("import-file").addEventListener("change", (e) => { if (e.target.files[0]) importData(e.target.files[0]); e.target.value = ""; });
+  const monthKeys = Object.keys(state.months).sort().reverse();
+  const active = state.months[state.activeMonth];
+  const cats = state.settings.categories;
+  const goals = state.settings.goals;
 
-if (!Store.usable) { $("banner").style.display = "block"; $("storage-note").textContent = "in memory (preview only)"; }
+  const totalIncome = active.detailed ? active.income.reduce((a, r) => a + toNum(r.amount), 0) : active.summary.income;
+  const totalExpense = active.detailed ? active.expenses.reduce((a, r) => a + toNum(r.amount), 0) : active.summary.expense;
+  const cashFlow = totalIncome - totalExpense;
+  const endBal = active.detailed ? (toNum(active.startingBalance) + cashFlow)
+    : (active.endingBalance != null ? active.endingBalance : toNum(active.startingBalance) + cashFlow);
 
-renderAll();
+  const actualByCat = {};
+  cats.forEach((c) => (actualByCat[c] = 0));
+  if (active.detailed) active.expenses.forEach((r) => {
+    if (actualByCat[r.category] === undefined) actualByCat[r.category] = 0;
+    actualByCat[r.category] += toNum(r.amount);
+  });
+
+  const savingsTarget = (goals.Savings || 0) * totalIncome;
+  const rothPlan = Math.min(state.settings.rothMonthlyGoal, savingsTarget);
+  const hysaPlan = Math.max(0, savingsTarget - rothPlan);
+  const savedActual = actualByCat["Savings"] || 0;
+
+  const mutate = (fn) => setState((prev) => { const next = JSON.parse(JSON.stringify(prev)); fn(next); return next; });
+  const setActive = (key) => mutate((s) => { s.activeMonth = key; });
+  const addIncome = (source, amount) => mutate((s) => { s.months[s.activeMonth].income.push({ id: uid(), source, amount }); });
+  const addExpense = (name, amount, category) => mutate((s) => { s.months[s.activeMonth].expenses.push({ id: uid(), name, amount, category }); });
+  const editRow = (list, id, field, value) => mutate((s) => {
+    const row = s.months[s.activeMonth][list].find((r) => r.id === id);
+    if (row) row[field] = value;
+  });
+  const delRow = (list, id) => mutate((s) => {
+    const m = s.months[s.activeMonth]; m[list] = m[list].filter((r) => r.id !== id);
+  });
+  const saveGoals = (newGoals, roth, apy) => mutate((s) => {
+    s.settings.goals = newGoals; s.settings.rothMonthlyGoal = roth; s.settings.hysaAPY = apy;
+  });
+  const addMonth = (key, label, startBal) => mutate((s) => {
+    if (s.months[key]) return;
+    s.months[key] = { label, detailed: true, startingBalance: startBal, income: [], expenses: [] };
+    s.activeMonth = key;
+  });
+  const resetAll = () => setState(seedState());
+
+  return (
+    <div className="led">
+      <div className="wrap">
+
+        <div className="top">
+          <div className="mark">
+            <div className="logo">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
+                <path d="M3 18a9 9 0 0 1 18 0" stroke="#fff" strokeWidth="1.7" strokeLinecap="round"/>
+                <path d="M12 18L16 9" stroke="#fff" strokeWidth="1.7" strokeLinecap="round"/>
+                <circle cx="12" cy="18" r="1.7" fill="#fff"/>
+              </svg>
+            </div>
+            <div>
+              <h1>Ledger</h1>
+              <p>Monthly budget console</p>
+            </div>
+          </div>
+          <div className="ctrl">
+            <select className="month" value={state.activeMonth} onChange={(e) => setActive(e.target.value)}>
+              {monthKeys.map((k) => (
+                <option key={k} value={k}>{state.months[k].label}{state.months[k].detailed ? "" : " · imported"}</option>
+              ))}
+            </select>
+            <button className="btn primary" onClick={() => setShowAddMonth(true)}>+ Month</button>
+            <button className="btn ghost small" onClick={() => setShowGoals(true)}>Targets</button>
+            <button className="btn ghost small" onClick={() => exportData(state)}>Backup</button>
+            <button className="btn ghost small" onClick={() => fileRef.current && fileRef.current.click()}>Restore</button>
+            <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: "none" }} onChange={handleImport} />
+          </div>
+        </div>
+
+        <div className="stats">
+          <div className="stat in">
+            <div className="lab">Money in</div>
+            <div className="val num">{usd(totalIncome)}</div>
+          </div>
+          <div className="stat out">
+            <div className="lab">Money out</div>
+            <div className="val num">{usd(totalExpense)}</div>
+          </div>
+          <div className={"stat flow " + (cashFlow >= 0 ? "pos" : "neg")}>
+            <div className="lab">Cash flow</div>
+            <div className={"val num " + (cashFlow >= 0 ? "pos" : "neg")}>{cashFlow >= 0 ? "+" : "−"}{usd(Math.abs(cashFlow))}</div>
+          </div>
+          <div className={"stat end " + (endBal >= toNum(active.startingBalance) ? "pos" : "neg")}>
+            <div className="lab">Ending balance</div>
+            <div className="val num">{usd(endBal)}</div>
+            <div className="sub num">from {usd(toNum(active.startingBalance))} start</div>
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="phead">
+            <div className="t">Goal vs actual</div>
+            <div className="hint">targets are a share of this month's income · <span className="num">{usd(totalIncome)}</span></div>
+          </div>
+          {active.detailed ? (
+            totalIncome > 0 ? (
+              <div className="meters">
+                {cats.map((c) => (
+                  <Meter key={c} name={c} pct={goals[c] || 0} target={(goals[c] || 0) * totalIncome} actual={actualByCat[c] || 0} isSavings={c === "Savings"} />
+                ))}
+              </div>
+            ) : (
+              <div className="empty">Log some income below and your category targets will populate here.</div>
+            )
+          ) : (
+            <div className="empty">This month was imported as monthly totals only. Add its transactions to see the category breakdown, or just use it for the trend below.</div>
+          )}
+        </div>
+
+        {active.detailed && (
+          <div className="cols">
+            <div className="panel">
+              <div className="phead"><div className="t">Money in</div></div>
+              <IncomeTable rows={active.income} onEdit={editRow} onDel={delRow} onAdd={addIncome} total={totalIncome} />
+            </div>
+            <div className="panel">
+              <div className="phead"><div className="t">Money out</div></div>
+              <ExpenseTable rows={active.expenses} cats={cats} onEdit={editRow} onDel={delRow} onAdd={addExpense} total={totalExpense} />
+            </div>
+          </div>
+        )}
+
+        <div className="panel">
+          <div className="phead">
+            <div className="t">Savings split</div>
+            <div className="hint">how this month's savings goal divides</div>
+          </div>
+          <div className="split">
+            <div className="splitbar">
+              <div className="seg roth" style={{ flex: rothPlan || 1 }}>
+                <div className="k">Roth</div>
+                <div className="v num">{usd0(rothPlan)}</div>
+              </div>
+              <div className="seg hysa" style={{ flex: hysaPlan || 0.0001, display: hysaPlan <= 0 ? "none" : "flex" }}>
+                <div className="k">HYSA</div>
+                <div className="v num">{usd0(hysaPlan)}</div>
+              </div>
+            </div>
+            <div className="splitnote">
+              Savings target this month is <b>{usd(savingsTarget)}</b> ({Math.round((goals.Savings || 0) * 100)}% of income).
+              Roth takes <b>{usd(rothPlan)}</b> toward your {usd0(state.settings.rothMonthlyGoal * 12)}/yr goal; the rest, <b>{usd(hysaPlan)}</b>, goes to your HYSA.
+              {active.detailed && (
+                <React.Fragment> You've moved <b>{usd(savedActual)}</b> into savings so far{savedActual >= savingsTarget && savingsTarget > 0 ? " — goal met." : savingsTarget > 0 ? " — " + usd(savingsTarget - savedActual) + " to go." : "."}</React.Fragment>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="phead">
+            <div className="t">Trends</div>
+            <div className="legend">
+              <span className="k"><span className="sw" style={{ background: "var(--brand)" }} />In</span>
+              <span className="k"><span className="sw" style={{ background: "var(--ink-soft)" }} />Out</span>
+            </div>
+          </div>
+          <Trends months={state.months} activeKey={state.activeMonth} onPick={setActive} />
+        </div>
+
+      </div>
+
+      {showGoals && (
+        <GoalsModal cats={cats} goals={goals} roth={state.settings.rothMonthlyGoal} apy={state.settings.hysaAPY}
+          onClose={() => setShowGoals(false)}
+          onSave={(g, r, a) => { saveGoals(g, r, a); setShowGoals(false); }}
+          onReset={() => { resetAll(); setShowGoals(false); }} />
+      )}
+      {showAddMonth && (
+        <AddMonthModal existing={state.months}
+          onClose={() => setShowAddMonth(false)}
+          onCreate={(k, l, s) => { addMonth(k, l, s); setShowAddMonth(false); }} />
+      )}
+    </div>
+  );
+}
+
+function Meter({ name, pct, target, actual, isSavings }) {
+  const scale = Math.max(target, actual, 1) * 1.15;
+  const notchPct = (target / scale) * 100;
+  const good = Math.min(actual, isSavings ? actual : target);
+  const goodPct = (good / scale) * 100;
+  const overPct = !isSavings && actual > target ? ((actual - target) / scale) * 100 : 0;
+
+  let chip, chipClass;
+  if (isSavings) {
+    const delta = actual - target;
+    if (delta >= 0) { chip = "+" + usd0(delta) + " ahead"; chipClass = "good"; }
+    else { chip = usd0(Math.abs(delta)) + " to go"; chipClass = "warn"; }
+  } else {
+    const delta = target - actual;
+    if (delta >= 0) { chip = usd0(delta) + " left"; chipClass = "good"; }
+    else { chip = usd0(Math.abs(delta)) + " over"; chipClass = "bad"; }
+  }
+
+  return (
+    <div className="meter">
+      <div className="cat">{name}<span className="pct">{Math.round(pct * 100)}%</span></div>
+      <div className="track">
+        <div className={"fill " + (isSavings ? "gsave" : "g")} style={{ width: Math.min(goodPct, 100) + "%" }} />
+        {overPct > 0 && (<div className="over" style={{ left: notchPct + "%", width: Math.min(overPct, 100 - notchPct) + "%" }} />)}
+        <div className="notch" style={{ left: notchPct + "%" }} />
+      </div>
+      <div className="fig">
+        <div className="amt">{usd0(actual)} <span className="of">/ {usd0(target)}</span></div>
+        <span className={"chip " + chipClass}>{chip}</span>
+      </div>
+    </div>
+  );
+}
+
+function IncomeTable({ rows, onEdit, onDel, onAdd, total }) {
+  const [src, setSrc] = useState("");
+  const [amt, setAmt] = useState("");
+  const commit = () => { if (!src.trim() && !amt) return; onAdd(src.trim() || "Income", amt || "0"); setSrc(""); setAmt(""); };
+  return (
+    <React.Fragment>
+      {rows.length === 0 ? (
+        <div className="empty">No income logged yet. Add your first source below.</div>
+      ) : (
+        <table className="ledgerT">
+          <thead><tr><th>Source</th><th className="r">Amount</th><th style={{ width: 34 }}></th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id}>
+                <td><input className="cell" value={r.source} onChange={(e) => onEdit("income", r.id, "source", e.target.value)} /></td>
+                <td className="r"><input className="cell amt" inputMode="decimal" value={r.amount} onChange={(e) => onEdit("income", r.id, "amount", e.target.value)} /></td>
+                <td><button className="del" onClick={() => onDel("income", r.id)} aria-label="Delete">×</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="addrow">
+        <input className="fname" placeholder="Source (e.g. Curtiss-Wright)" value={src} onChange={(e) => setSrc(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
+        <input className="famt" placeholder="0.00" inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
+        <button className="btn primary small" onClick={commit}>Add</button>
+      </div>
+      <div className="subtotal"><span className="l">Total in</span><span className="v num">{usd(total)}</span></div>
+    </React.Fragment>
+  );
+}
+
+function ExpenseTable({ rows, cats, onEdit, onDel, onAdd, total }) {
+  const [name, setName] = useState("");
+  const [amt, setAmt] = useState("");
+  const [cat, setCat] = useState("Misc");
+  const commit = () => { if (!name.trim() && !amt) return; onAdd(name.trim() || "Expense", amt || "0", cat); setName(""); setAmt(""); };
+  return (
+    <React.Fragment>
+      {rows.length === 0 ? (
+        <div className="empty">No expenses logged yet. Add one below and pick its category.</div>
+      ) : (
+        <table className="ledgerT">
+          <thead><tr><th>Item</th><th className="r">Amount</th><th>Category</th><th style={{ width: 34 }}></th></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id}>
+                <td><input className="cell" value={r.name} onChange={(e) => onEdit("expenses", r.id, "name", e.target.value)} /></td>
+                <td className="r"><input className="cell amt" inputMode="decimal" value={r.amount} onChange={(e) => onEdit("expenses", r.id, "amount", e.target.value)} /></td>
+                <td>
+                  <select className="cell" value={r.category} onChange={(e) => onEdit("expenses", r.id, "category", e.target.value)}>
+                    {cats.map((c) => <option key={c} value={c}>{c}</option>)}
+                    {!cats.includes(r.category) && <option value={r.category}>{r.category}</option>}
+                  </select>
+                </td>
+                <td><button className="del" onClick={() => onDel("expenses", r.id)} aria-label="Delete">×</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="addrow">
+        <input className="fname" placeholder="Item (e.g. Groceries)" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
+        <input className="famt" placeholder="0.00" inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
+        <select className="fcat" value={cat} onChange={(e) => setCat(e.target.value)}>
+          {cats.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <button className="btn primary small" onClick={commit}>Add</button>
+      </div>
+      <div className="subtotal"><span className="l">Total out</span><span className="v num">{usd(total)}</span></div>
+    </React.Fragment>
+  );
+}
+
+function Trends({ months, activeKey, onPick }) {
+  const keys = Object.keys(months).sort();
+  const data = keys.map((k) => {
+    const m = months[k];
+    const inc = m.detailed ? m.income.reduce((a, r) => a + toNum(r.amount), 0) : m.summary.income;
+    const exp = m.detailed ? m.expenses.reduce((a, r) => a + toNum(r.amount), 0) : m.summary.expense;
+    return { k, label: m.label.split(" ")[0].slice(0, 3), inc, exp };
+  });
+  const max = Math.max(1, ...data.map((d) => Math.max(d.inc, d.exp)));
+  const W = 1000, H = 240, padL = 46, padR = 12, padT = 12, padB = 34;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const groupW = plotW / data.length;
+  const barW = Math.min(22, groupW * 0.3);
+  const gap = 5;
+  const y = (v) => padT + plotH - (v / max) * plotH;
+  const ticks = 4;
+
+  return (
+    <div className="chartwrap">
+      <svg viewBox={"0 0 " + W + " " + H} width="100%" preserveAspectRatio="xMidYMid meet" style={{ display: "block" }}>
+        {Array.from({ length: ticks + 1 }).map((_, i) => {
+          const v = (max / ticks) * i; const yy = y(v);
+          return (
+            <g key={i}>
+              <line x1={padL} y1={yy} x2={W - padR} y2={yy} stroke="#e6ecec" strokeWidth="1" />
+              <text x={padL - 8} y={yy + 3.5} textAnchor="end" fontSize="10" fill="#a7b3b7" fontFamily="'JetBrains Mono', monospace">{usd0(v)}</text>
+            </g>
+          );
+        })}
+        {data.map((d, i) => {
+          const cx = padL + groupW * i + groupW / 2;
+          const isActive = d.k === activeKey;
+          return (
+            <g key={d.k} style={{ cursor: "pointer" }} onClick={() => onPick(d.k)}>
+              <rect x={padL + groupW * i} y={padT} width={groupW} height={plotH} fill={isActive ? "#f0f5f5" : "transparent"} rx="4" />
+              <rect x={cx - barW - gap / 2} y={y(d.inc)} width={barW} height={plotH + padT - y(d.inc)} rx="3" fill="#0e5b71" />
+              <rect x={cx + gap / 2} y={y(d.exp)} width={barW} height={plotH + padT - y(d.exp)} rx="3" fill="#3f545c" />
+              <text x={cx} y={H - 12} textAnchor="middle" fontSize="11" fill={isActive ? "#152329" : "#79888e"} fontFamily="'Space Grotesk', sans-serif" fontWeight={isActive ? 700 : 500}>{d.label}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function GoalsModal({ cats, goals, roth, apy, onClose, onSave, onReset }) {
+  const [g, setG] = useState(() => { const o = {}; cats.forEach((c) => (o[c] = Math.round((goals[c] || 0) * 100).toString())); return o; });
+  const [rothV, setRothV] = useState(roth.toString());
+  const [apyV, setApyV] = useState((apy * 100).toString());
+  const total = cats.reduce((a, c) => a + toNum(g[c]), 0);
+  const save = () => { const out = {}; cats.forEach((c) => (out[c] = toNum(g[c]) / 100)); onSave(out, toNum(rothV), toNum(apyV) / 100); };
+  return (
+    <div className="scrim" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>Category targets</h3>
+        <p className="msub">Each target is a share of the month's income. These apply to every month.</p>
+        {cats.map((c) => (
+          <div className="goalrow" key={c}>
+            <label>{c}</label>
+            <div className="pctin">
+              <input inputMode="decimal" value={g[c]} onChange={(e) => setG(Object.assign({}, g, { [c]: e.target.value }))} />
+              <span>%</span>
+            </div>
+          </div>
+        ))}
+        <div className="goaltot">
+          <span>Total allocated</span>
+          <span className={"v " + (Math.abs(total - 100) < 0.5 ? "ok" : "off")}>{total.toFixed(0)}%</span>
+        </div>
+        <div style={{ height: 18 }} />
+        <div className="settings-grid">
+          <div className="field" style={{ margin: 0 }}>
+            <label>Roth / month</label>
+            <input className="num" inputMode="decimal" value={rothV} onChange={(e) => setRothV(e.target.value)} />
+          </div>
+          <div className="field" style={{ margin: 0 }}>
+            <label>HYSA APY %</label>
+            <input className="num" inputMode="decimal" value={apyV} onChange={(e) => setApyV(e.target.value)} />
+          </div>
+        </div>
+        <div className="modactions">
+          <button className="btn ghost small spacer" onClick={() => { if (confirm("Reset everything back to the seeded data? This clears any months you've added.")) onReset(); }}>Reset all data</button>
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={save}>Save targets</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddMonthModal({ existing, onClose, onCreate }) {
+  const keys = Object.keys(existing).sort();
+  const lastKey = keys[keys.length - 1];
+  const lastEnd = lastKey
+    ? (existing[lastKey].detailed
+        ? toNum(existing[lastKey].startingBalance) +
+          existing[lastKey].income.reduce((a, r) => a + toNum(r.amount), 0) -
+          existing[lastKey].expenses.reduce((a, r) => a + toNum(r.amount), 0)
+        : (existing[lastKey].endingBalance != null ? existing[lastKey].endingBalance : 0))
+    : 0;
+  const now = new Date();
+  const [mi, setMi] = useState(now.getMonth());
+  const [yr, setYr] = useState(now.getFullYear().toString());
+  const [start, setStart] = useState(lastEnd.toFixed(2));
+  const create = () => {
+    const key = yr + "-" + String(mi + 1).padStart(2, "0");
+    if (existing[key]) { alert(MONTH_NAMES[mi] + " " + yr + " already exists — pick it from the dropdown."); return; }
+    onCreate(key, MONTH_NAMES[mi] + " " + yr, start);
+  };
+  return (
+    <div className="scrim" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>Start a new month</h3>
+        <p className="msub">Its starting balance defaults to last month's ending balance.</p>
+        <div className="field">
+          <label>Month</label>
+          <div className="ri">
+            <select value={mi} onChange={(e) => setMi(+e.target.value)}>
+              {MONTH_NAMES.map((m, i) => <option key={m} value={i}>{m}</option>)}
+            </select>
+            <input className="num" style={{ maxWidth: 110 }} inputMode="numeric" value={yr} onChange={(e) => setYr(e.target.value)} />
+          </div>
+        </div>
+        <div className="field">
+          <label>Starting balance</label>
+          <input className="num" inputMode="decimal" value={start} onChange={(e) => setStart(e.target.value)} />
+        </div>
+        <div className="modactions">
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={create}>Create month</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<BudgetLedger />);
 </script>
 </body>
 </html>
