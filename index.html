@@ -130,6 +130,20 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
   background-repeat:no-repeat; background-position:right 6px center; padding-right:22px; }
 .led .del { border:0; background:transparent; color:var(--faint); cursor:pointer; font-size:16px; line-height:1; padding:4px 6px; border-radius:6px; }
 .led .del:hover { color:var(--red); background:var(--red-tint); }
+.led .del:disabled { opacity:.28; cursor:default; }
+.led .del:disabled:hover { color:var(--faint); background:transparent; }
+.led .monthlist { display:flex; flex-direction:column; gap:5px; margin-bottom:18px; max-height:44vh; overflow:auto; }
+.led .monthrow { display:flex; align-items:center; gap:4px; border:1px solid var(--line); border-radius:10px; padding:2px 4px 2px 2px; }
+.led .monthrow.active { border-color:var(--brand); background:var(--brand-tint); }
+.led .monthpick { flex:1; min-width:0; display:flex; flex-direction:column; align-items:flex-start; gap:2px; background:transparent; border:0; cursor:pointer; padding:8px 10px; border-radius:8px; text-align:left; }
+.led .monthpick:hover { background:rgba(21,35,41,.035); }
+.led .monthrow.active .monthpick:hover { background:transparent; }
+.led .mlabel { font-family:var(--font-d); font-weight:600; font-size:13.5px; color:var(--ink); display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+.led .mtag { font-family:var(--font-d); font-weight:600; font-size:9px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); background:var(--paper); border:1px solid var(--line); padding:1px 6px; border-radius:10px; }
+.led .mtag.cur { color:var(--brand); background:#fff; border-color:var(--brand); }
+.led .mfig { font-family:var(--font-m); font-size:11px; color:var(--faint); }
+.led .addmonthbox { border-top:2px solid var(--line-2); padding-top:16px; }
+.led .addmonthbox .fieldlabel { font-family:var(--font-d); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:12px; }
 .led .subtotal { display:flex; justify-content:space-between; align-items:baseline; margin-top:10px; padding-top:10px; border-top:2px solid var(--line-2); }
 .led .subtotal .l { font-family:var(--font-d); text-transform:uppercase; letter-spacing:.1em; font-size:10.5px; font-weight:600; color:var(--muted); }
 .led .subtotal .v { font-family:var(--font-m); font-weight:600; font-size:16px; }
@@ -208,7 +222,7 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V1.1</div>
+<div class="version">V1.2</div>
 <div id="root"><div class="boot">Loading Ledger…</div></div>
 
 <script>
@@ -461,6 +475,14 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const mutate = (fn) => setState((prev) => { const next = JSON.parse(JSON.stringify(prev)); fn(next); return next; });
   const setActive = (key) => mutate((s) => { s.activeMonth = key; });
   const setStart = (v) => mutate((s) => { s.months[s.activeMonth].startingBalance = v; });
+  const deleteMonth = (key) => mutate((s) => {
+    if (Object.keys(s.months).length <= 1) return; // keep at least one month
+    delete s.months[key];
+    if (s.activeMonth === key) {
+      const remaining = Object.keys(s.months).sort();
+      s.activeMonth = remaining[remaining.length - 1];
+    }
+  });
   const addIncome = (source, amount) => mutate((s) => { s.months[s.activeMonth].income.push({ id: uid(), source, amount }); });
   const addExpense = (name, amount, category) => mutate((s) => { s.months[s.activeMonth].expenses.push({ id: uid(), name, amount, category }); });
   const editRow = (list, id, field, value) => mutate((s) => { const row = s.months[s.activeMonth][list].find((r) => r.id === id); if (row) row[field] = value; });
@@ -492,7 +514,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
             <select className="month" value={state.activeMonth} onChange={(e) => setActive(e.target.value)}>
               {monthKeys.map((k) => (<option key={k} value={k}>{state.months[k].label}{state.months[k].detailed ? "" : " · imported"}</option>))}
             </select>
-            <button className="btn primary" onClick={() => setShowAddMonth(true)}>+ Month</button>
+            <button className="btn primary" onClick={() => setShowAddMonth(true)}>Months</button>
             <button className="btn ghost small" onClick={() => setShowGoals(true)}>Targets</button>
             <button className="btn ghost small" onClick={() => exportData(state)}>Backup</button>
             <button className="btn ghost small" onClick={() => fileRef.current && fileRef.current.click()}>Restore</button>
@@ -591,7 +613,13 @@ function BudgetLedger({ mode, session, onSignOut }) {
           onReset={() => { resetAll(); setShowGoals(false); }} />
       )}
       {showAddMonth && (
-        <AddMonthModal existing={state.months} onClose={() => setShowAddMonth(false)} onCreate={(k, l, s) => { addMonth(k, l, s); setShowAddMonth(false); }} />
+        <MonthsModal
+          existing={state.months}
+          activeKey={state.activeMonth}
+          onClose={() => setShowAddMonth(false)}
+          onSelect={(k) => { setActive(k); setShowAddMonth(false); }}
+          onDelete={deleteMonth}
+          onCreate={(k, l, s) => { addMonth(k, l, s); setShowAddMonth(false); }} />
       )}
     </div>
   );
@@ -768,9 +796,10 @@ function GoalsModal({ cats, goals, roth, apy, onClose, onSave, onReset }) {
   );
 }
 
-function AddMonthModal({ existing, onClose, onCreate }) {
-  const keys = Object.keys(existing).sort();
-  const lastKey = keys[keys.length - 1];
+function MonthsModal({ existing, activeKey, onClose, onSelect, onDelete, onCreate }) {
+  const keysAsc = Object.keys(existing).sort();
+  const keysDesc = keysAsc.slice().reverse();
+  const lastKey = keysAsc[keysAsc.length - 1];
   const lastEnd = lastKey
     ? (existing[lastKey].detailed
         ? toNum(existing[lastKey].startingBalance) + existing[lastKey].income.reduce((a, r) => a + toNum(r.amount), 0) - existing[lastKey].expenses.reduce((a, r) => a + toNum(r.amount), 0)
@@ -780,25 +809,59 @@ function AddMonthModal({ existing, onClose, onCreate }) {
   const [mi, setMi] = useState(now.getMonth());
   const [yr, setYr] = useState(now.getFullYear().toString());
   const [start, setStart] = useState(lastEnd.toFixed(2));
+  const onlyOne = keysAsc.length <= 1;
+
   const create = () => {
     const key = yr + "-" + String(mi + 1).padStart(2, "0");
-    if (existing[key]) { alert(MONTH_NAMES[mi] + " " + yr + " already exists — pick it from the dropdown."); return; }
+    if (existing[key]) { alert(MONTH_NAMES[mi] + " " + yr + " already exists — it's already in the list."); return; }
     onCreate(key, MONTH_NAMES[mi] + " " + yr, start);
   };
+  const remove = (k, m) => {
+    const hasData = m.detailed && (m.income.length + m.expenses.length > 0);
+    if (hasData && !confirm("Delete " + m.label + " and everything logged in it?")) return;
+    onDelete(k);
+  };
+
   return (
     <div className="scrim" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Start a new month</h3>
-        <p className="msub">Its starting balance defaults to last month's ending balance.</p>
-        <div className="field">
-          <label>Month</label>
-          <div className="ri">
-            <select value={mi} onChange={(e) => setMi(+e.target.value)}>{MONTH_NAMES.map((m, i) => <option key={m} value={i}>{m}</option>)}</select>
-            <input className="num" style={{ maxWidth: 110 }} inputMode="numeric" value={yr} onChange={(e) => setYr(e.target.value)} />
-          </div>
+        <h3>Months</h3>
+        <p className="msub">Tap a month to switch to it, or use × to delete one. Deleting removes its data and syncs the change.</p>
+
+        <div className="monthlist">
+          {keysDesc.map((k) => {
+            const m = existing[k];
+            const isActive = k === activeKey;
+            const inc = m.detailed ? m.income.reduce((a, r) => a + toNum(r.amount), 0) : m.summary.income;
+            const exp = m.detailed ? m.expenses.reduce((a, r) => a + toNum(r.amount), 0) : m.summary.expense;
+            return (
+              <div className={"monthrow" + (isActive ? " active" : "")} key={k}>
+                <button className="monthpick" onClick={() => onSelect(k)}>
+                  <span className="mlabel">
+                    {m.label}
+                    {!m.detailed && <span className="mtag">imported</span>}
+                    {isActive && <span className="mtag cur">current</span>}
+                  </span>
+                  <span className="mfig">{usd0(inc)} in · {usd0(exp)} out</span>
+                </button>
+                <button className="del" title={onlyOne ? "Can't delete the only month" : "Delete month"} disabled={onlyOne} onClick={() => remove(k, m)} aria-label="Delete month">×</button>
+              </div>
+            );
+          })}
         </div>
-        <div className="field"><label>Starting balance</label><input className="num" inputMode="decimal" value={start} onChange={(e) => setStart(e.target.value)} /></div>
-        <div className="modactions"><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" onClick={create}>Create month</button></div>
+
+        <div className="addmonthbox">
+          <div className="fieldlabel">Add a month</div>
+          <div className="field">
+            <label>Month</label>
+            <div className="ri">
+              <select value={mi} onChange={(e) => setMi(+e.target.value)}>{MONTH_NAMES.map((m, i) => <option key={m} value={i}>{m}</option>)}</select>
+              <input className="num" style={{ maxWidth: 110 }} inputMode="numeric" value={yr} onChange={(e) => setYr(e.target.value)} />
+            </div>
+          </div>
+          <div className="field"><label>Starting balance</label><input className="num" inputMode="decimal" value={start} onChange={(e) => setStart(e.target.value)} /></div>
+          <div className="modactions"><button className="btn ghost" onClick={onClose}>Done</button><button className="btn primary" onClick={create}>Create month</button></div>
+        </div>
       </div>
     </div>
   );
