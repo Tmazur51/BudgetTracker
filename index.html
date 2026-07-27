@@ -252,6 +252,9 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 .led .pf input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
 .led .projout { font-family:var(--font-d); font-size:15px; color:var(--ink); background:var(--brand-tint); border:1px solid #b9d0d8; border-radius:10px; padding:12px 14px; }
 .led .projout b { font-size:19px; color:var(--brand-2); }
+.led .gl { font-family:var(--font-m); font-size:12px; font-weight:600; }
+.led .gl.up, .led .subtotal .v.up { color:var(--green); }
+.led .gl.down, .led .subtotal .v.down { color:var(--red); }
 
 @media (max-width:720px){
   .led .stats { grid-template-columns:1fr 1fr; }
@@ -268,7 +271,7 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V1.5</div>
+<div class="version">V1.6</div>
 <div id="root"><div class="boot">Loading Ledger…</div></div>
 
 <script>
@@ -372,7 +375,7 @@ function seedState() {
   const months = {
     "2026-05": { label: "May 2026", detailed: true, startingBalance: 0, income: [], expenses: [] },
   };
-  return { version: 1, settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045 }, months, activeMonth: "2026-05", investing: { accounts: [], contributions: [] } };
+  return { version: 1, settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045 }, months, activeMonth: "2026-05", investing: { accounts: [], contributions: [], holdings: [] } };
 }
 
 /* ============================ auth (cloud mode) ============================ */
@@ -502,8 +505,9 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const active = state.months[state.activeMonth];
   const cats = state.settings.categories;
   const goals = state.settings.goals;
-  const investing = state.investing || { accounts: [], contributions: [] };
+  const investing = state.investing || { accounts: [], contributions: [], holdings: [] };
   const contributions = investing.contributions || [];
+  const holdings = investing.holdings || [];
   const spendCats = cats.filter((c) => c !== "Savings");
   const savedThisMonth = contributions.reduce((a, c) => (String(c.date || "").slice(0, 7) === state.activeMonth ? a + toNum(c.amount) : a), 0);
   const totalSaved = contributions.reduce((a, c) => a + toNum(c.amount), 0);
@@ -550,6 +554,9 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const delAccount = (id) => mutate((s) => { if (!s.investing) return; s.investing.accounts = s.investing.accounts.filter((x) => x.id !== id); });
   const addContribution = (amount, date) => mutate((s) => { if (!s.investing) s.investing = { accounts: [], contributions: [] }; if (!s.investing.contributions) s.investing.contributions = []; s.investing.contributions.push({ id: uid(), amount, date }); });
   const delContribution = (id) => mutate((s) => { if (!s.investing || !s.investing.contributions) return; s.investing.contributions = s.investing.contributions.filter((c) => c.id !== id); });
+  const addHolding = (name, invested, value) => mutate((s) => { if (!s.investing) s.investing = { accounts: [], contributions: [], holdings: [] }; if (!s.investing.holdings) s.investing.holdings = []; s.investing.holdings.push({ id: uid(), name, invested, value }); });
+  const editHolding = (id, field, value) => mutate((s) => { if (!s.investing || !s.investing.holdings) return; const h = s.investing.holdings.find((x) => x.id === id); if (h) h[field] = value; });
+  const delHolding = (id) => mutate((s) => { if (!s.investing || !s.investing.holdings) return; s.investing.holdings = s.investing.holdings.filter((x) => x.id !== id); });
 
   const handleImport = (e) => {
     const f = e.target.files && e.target.files[0];
@@ -660,7 +667,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
         )}
 
         {page === "savings" && (
-          <SavingsPage accounts={investing.accounts} checking={endBal} contributions={contributions} activeMonthKey={state.activeMonth} monthLabel={active.label} onAdd={addAccount} onEdit={editAccount} onDel={delAccount} onAddContribution={addContribution} onDelContribution={delContribution} />
+          <SavingsPage accounts={investing.accounts} checking={endBal} contributions={contributions} holdings={holdings} activeMonthKey={state.activeMonth} monthLabel={active.label} onAdd={addAccount} onEdit={editAccount} onDel={delAccount} onAddContribution={addContribution} onDelContribution={delContribution} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} />
         )}
       </div>
 
@@ -921,13 +928,24 @@ function OverviewPage({ months, cats, totalSaved, onOpenMonth }) {
   );
 }
 
-function SavingsPage({ accounts, checking, contributions, activeMonthKey, monthLabel, onAdd, onEdit, onDel, onAddContribution, onDelContribution }) {
-  const total = accounts.reduce((a, x) => a + toNum(x.balance), 0);
-  const netWorth = total + toNum(checking);
+function SavingsPage({ accounts, checking, contributions, holdings, activeMonthKey, monthLabel, onAdd, onEdit, onDel, onAddContribution, onDelContribution, onAddHolding, onEditHolding, onDelHolding }) {
+  const cashTotal = accounts.reduce((a, x) => a + toNum(x.balance), 0);
+  const invested = holdings.reduce((a, h) => a + toNum(h.invested), 0);
+  const holdValue = holdings.reduce((a, h) => a + toNum(h.value), 0);
+  const gain = holdValue - invested;
+  const gainPct = invested > 0 ? gain / invested * 100 : 0;
+  const portfolio = cashTotal + holdValue;
+  const netWorth = portfolio + toNum(checking);
+
   const [name, setName] = useState("");
   const [bal, setBal] = useState("");
   const [apy, setApy] = useState("");
   const commit = () => { if (!name.trim() && !bal) return; onAdd(name.trim() || "Account", bal || "0", apy || ""); setName(""); setBal(""); setApy(""); };
+
+  const [hName, setHName] = useState("");
+  const [hInv, setHInv] = useState("");
+  const [hVal, setHVal] = useState("");
+  const addH = () => { if (!hName.trim() && !hInv && !hVal) return; onAddHolding(hName.trim() || "Holding", hInv || "0", hVal || hInv || "0"); setHName(""); setHInv(""); setHVal(""); };
 
   const today = new Date().toISOString().slice(0, 10);
   const [cAmt, setCAmt] = useState("");
@@ -935,7 +953,6 @@ function SavingsPage({ accounts, checking, contributions, activeMonthKey, monthL
   const addContrib = () => { if (!cAmt) return; onAddContribution(cAmt, cDate || today); setCAmt(""); setCDate(today); };
   const sorted = contributions.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const thisMonth = contributions.reduce((a, c) => (String(c.date || "").slice(0, 7) === activeMonthKey ? a + toNum(c.amount) : a), 0);
-  const allTime = contributions.reduce((a, c) => a + toNum(c.amount), 0);
 
   const [contrib, setContrib] = useState("500");
   const [rate, setRate] = useState("5");
@@ -943,14 +960,50 @@ function SavingsPage({ accounts, checking, contributions, activeMonthKey, monthL
   const r = toNum(rate) / 100 / 12;
   const nMonths = Math.max(0, toNum(years) * 12);
   const pmt = toNum(contrib);
-  const fv = r > 0 ? total * Math.pow(1 + r, nMonths) + pmt * ((Math.pow(1 + r, nMonths) - 1) / r) : total + pmt * nMonths;
+  const fv = r > 0 ? portfolio * Math.pow(1 + r, nMonths) + pmt * ((Math.pow(1 + r, nMonths) - 1) / r) : portfolio + pmt * nMonths;
 
   return (
     <React.Fragment>
       <div className="tiles">
-        <div className="tile brand"><div className="tlab">Savings &amp; investments</div><div className="tval num brand">{usd(total)}</div></div>
-        <div className="tile"><div className="tlab">Contributed all-time</div><div className="tval num">{usd(allTime)}</div></div>
-        <div className="tile pos"><div className="tlab">Net worth</div><div className="tval num pos">{usd(netWorth)}</div><div className="tsub">savings + checking</div></div>
+        <div className="tile brand"><div className="tlab">Savings &amp; investments</div><div className="tval num brand">{usd(portfolio)}</div></div>
+        <div className={"tile " + (gain >= 0 ? "pos" : "neg")}>
+          <div className="tlab">Investment gain / loss</div>
+          <div className={"tval num " + (gain >= 0 ? "pos" : "neg")}>{gain >= 0 ? "+" : "−"}{usd0(Math.abs(gain))}</div>
+          <div className="tsub">{invested > 0 ? (gain >= 0 ? "+" : "−") + Math.abs(gainPct).toFixed(1) + "% on what you invested" : "add holdings to track"}</div>
+        </div>
+        <div className="tile pos"><div className="tlab">Net worth</div><div className="tval num pos">{usd(netWorth)}</div><div className="tsub">investments + checking</div></div>
+      </div>
+
+      <div className="panel">
+        <div className="phead"><div className="t">Stocks &amp; investments</div><div className="hint">what you put in vs. what it's worth now — update "value now" whenever you check</div></div>
+        {holdings.length === 0 ? (
+          <div className="empty">No holdings yet. Add a stock or fund below with how much you put in and what it's worth now — then come back and update the value to see if it's made you money.</div>
+        ) : (
+          <table className="ledgerT">
+            <thead><tr><th>Holding</th><th className="r">Invested</th><th className="r">Value now</th><th className="r">Gain / loss</th><th style={{ width: 34 }}></th></tr></thead>
+            <tbody>
+              {holdings.map((h) => {
+                const inv = toNum(h.invested), val = toNum(h.value), g = val - inv, p = inv > 0 ? g / inv * 100 : 0;
+                return (
+                  <tr key={h.id}>
+                    <td><input className="cell" value={h.name} onChange={(e) => onEditHolding(h.id, "name", e.target.value)} /></td>
+                    <td className="r"><input className="cell amt" inputMode="decimal" value={h.invested} onChange={(e) => onEditHolding(h.id, "invested", e.target.value)} /></td>
+                    <td className="r"><input className="cell amt" inputMode="decimal" value={h.value} onChange={(e) => onEditHolding(h.id, "value", e.target.value)} /></td>
+                    <td className="r"><span className={"gl " + (g >= 0 ? "up" : "down")}>{g >= 0 ? "+" : "−"}{usd0(Math.abs(g))}{inv > 0 ? " (" + (g >= 0 ? "+" : "−") + Math.abs(p).toFixed(1) + "%)" : ""}</span></td>
+                    <td><button className="del" onClick={() => onDelHolding(h.id)} aria-label="Delete holding">×</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+        <div className="addrow">
+          <input className="fname" placeholder="Holding (e.g. AAPL, VTI)" value={hName} onChange={(e) => setHName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addH()} />
+          <input className="famt" placeholder="Invested" inputMode="decimal" value={hInv} onChange={(e) => setHInv(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addH()} />
+          <input className="famt" placeholder="Value now" inputMode="decimal" value={hVal} onChange={(e) => setHVal(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addH()} />
+          <button className="btn primary small" onClick={addH}>Add</button>
+        </div>
+        <div className="subtotal"><span className="l">Invested {usd(invested)} · now {usd(holdValue)}</span><span className={"v num " + (gain >= 0 ? "up" : "down")}>{gain >= 0 ? "+" : "−"}{usd(Math.abs(gain))}</span></div>
       </div>
 
       <div className="panel">
@@ -980,9 +1033,9 @@ function SavingsPage({ accounts, checking, contributions, activeMonthKey, monthL
       </div>
 
       <div className="panel">
-        <div className="phead"><div className="t">Accounts</div><div className="hint">where the money lives — update balances to match your statements</div></div>
+        <div className="phead"><div className="t">Cash &amp; savings accounts</div><div className="hint">interest-bearing balances — update to match your statements</div></div>
         {accounts.length === 0 ? (
-          <div className="empty">No accounts yet. Add your HYSA, Roth, brokerage — whatever you want to track — below.</div>
+          <div className="empty">No accounts yet. Add your HYSA, Roth, or any cash savings below.</div>
         ) : (
           <table className="ledgerT">
             <thead><tr><th>Account</th><th className="r">Balance</th><th className="r">APY %</th><th style={{ width: 34 }}></th></tr></thead>
@@ -999,18 +1052,18 @@ function SavingsPage({ accounts, checking, contributions, activeMonthKey, monthL
           </table>
         )}
         <div className="addrow">
-          <input className="fname" placeholder="Account (e.g. Roth IRA)" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
+          <input className="fname" placeholder="Account (e.g. HYSA)" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
           <input className="famt" placeholder="Balance" inputMode="decimal" value={bal} onChange={(e) => setBal(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
           <input className="famt" style={{ maxWidth: 78 }} placeholder="APY %" inputMode="decimal" value={apy} onChange={(e) => setApy(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
           <button className="btn primary small" onClick={commit}>Add</button>
         </div>
-        <div className="subtotal"><span className="l">Total in accounts</span><span className="v num">{usd(total)}</span></div>
+        <div className="subtotal"><span className="l">Total in accounts</span><span className="v num">{usd(cashTotal)}</span></div>
       </div>
 
       <div className="panel">
         <div className="phead"><div className="t">Projection</div><div className="hint">a rough what-if, compounded monthly</div></div>
         <div className="projgrid">
-          <div className="plead">Starting from your current total of <span className="num">{usd0(total)}</span>:</div>
+          <div className="plead">Starting from your current total of <span className="num">{usd0(portfolio)}</span>:</div>
           <div className="projfields">
             <div className="pf"><span>Add / month</span><input inputMode="decimal" value={contrib} onChange={(e) => setContrib(e.target.value)} /></div>
             <div className="pf"><span>Return %/yr</span><input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /></div>
