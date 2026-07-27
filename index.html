@@ -297,7 +297,7 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V1.8</div>
+<div class="version">V1.9</div>
 <div id="root"><div class="boot">Loading Ledger…</div></div>
 
 <script>
@@ -400,7 +400,6 @@ function migrate(s) {
   if (!s.investing) s.investing = {};
   const inv = s.investing;
   if (!Array.isArray(inv.accounts)) inv.accounts = [];
-  if (!Array.isArray(inv.contributions)) inv.contributions = [];
   inv.accounts = inv.accounts.map((a) => ({
     id: a.id || uid(),
     name: a.name || "Account",
@@ -413,6 +412,14 @@ function migrate(s) {
     inv.accounts.push({ id: uid(), name: "Investments", type: "investment", balance: "", apy: "", holdings: inv.holdings });
   }
   delete inv.holdings;
+  // legacy dated contributions → per-month "to savings" figure on each month
+  if (Array.isArray(inv.contributions) && inv.contributions.length && s.months) {
+    inv.contributions.forEach((c) => {
+      const key = String(c.date || "").slice(0, 7);
+      if (s.months[key]) s.months[key].toSavings = String(toNum(s.months[key].toSavings) + toNum(c.amount));
+    });
+  }
+  delete inv.contributions;
   return s;
 }
 
@@ -422,7 +429,7 @@ function seedState() {
   const months = {
     "2026-05": { label: "May 2026", detailed: true, startingBalance: 0, income: [], expenses: [] },
   };
-  return { version: 1, settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045 }, months, activeMonth: "2026-05", investing: { accounts: [], contributions: [] } };
+  return { version: 1, settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045 }, months, activeMonth: "2026-05", investing: { accounts: [] } };
 }
 
 /* ============================ auth (cloud mode) ============================ */
@@ -552,12 +559,11 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const active = state.months[state.activeMonth];
   const cats = state.settings.categories;
   const goals = state.settings.goals;
-  const investing = state.investing || { accounts: [], contributions: [] };
-  const contributions = investing.contributions || [];
+  const investing = state.investing || { accounts: [] };
   const accounts = investing.accounts || [];
   const spendCats = cats.filter((c) => c !== "Savings");
-  const savedThisMonth = contributions.reduce((a, c) => (String(c.date || "").slice(0, 7) === state.activeMonth ? a + toNum(c.amount) : a), 0);
-  const totalSaved = contributions.reduce((a, c) => a + toNum(c.amount), 0);
+  const savedThisMonth = toNum(active.toSavings);
+  const totalSaved = Object.values(state.months).reduce((a, m) => a + toNum(m.toSavings), 0);
 
   const totalIncome = active.detailed ? sumAmt(active.income) : active.summary.income;
   const totalExpense = active.detailed ? sumAmt(active.expenses) : active.summary.expense;
@@ -596,11 +602,10 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const saveGoals = (newGoals, roth, apy) => mutate((s) => { s.settings.goals = newGoals; s.settings.rothMonthlyGoal = roth; s.settings.hysaAPY = apy; });
   const addMonth = (key, label, startBal) => mutate((s) => { if (s.months[key]) return; s.months[key] = { label, detailed: true, startingBalance: startBal, income: [], expenses: [] }; s.activeMonth = key; });
   const resetAll = () => { skipSave.current = false; setState(seedState()); };
-  const addAccount = (name, type) => mutate((s) => { if (!s.investing) s.investing = { accounts: [], contributions: [] }; s.investing.accounts.push({ id: uid(), name, type, balance: "", apy: "", holdings: [] }); });
+  const addAccount = (name, type) => mutate((s) => { if (!s.investing) s.investing = { accounts: [] }; s.investing.accounts.push({ id: uid(), name, type, balance: "", apy: "", holdings: [] }); });
   const editAccount = (id, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === id); if (a) a[field] = value; });
   const delAccount = (id) => mutate((s) => { s.investing.accounts = s.investing.accounts.filter((x) => x.id !== id); });
-  const addContribution = (amount, date) => mutate((s) => { if (!s.investing) s.investing = { accounts: [], contributions: [] }; if (!s.investing.contributions) s.investing.contributions = []; s.investing.contributions.push({ id: uid(), amount, date }); });
-  const delContribution = (id) => mutate((s) => { if (!s.investing || !s.investing.contributions) return; s.investing.contributions = s.investing.contributions.filter((c) => c.id !== id); });
+  const setToSavings = (v) => mutate((s) => { s.months[s.activeMonth].toSavings = v; });
   const addHolding = (acctId, name, invested, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a) { if (!a.holdings) a.holdings = []; a.holdings.push({ id: uid(), name, invested, value }); } });
   const editHolding = (acctId, hId, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) h[field] = value; } });
   const delHolding = (acctId, hId) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) a.holdings = a.holdings.filter((y) => y.id !== hId); });
@@ -672,7 +677,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
                 <div className="lab">Ending balance</div>
                 <div className="val num">{usd(endBal)}</div>
                 {active.detailed
-                  ? <div className="sub">from <input className="startedit" inputMode="decimal" value={active.startingBalance} onChange={(e) => setStart(e.target.value)} /> start{savedThisMonth > 0 ? " · −" + usd0(savedThisMonth) + " to savings" : ""}</div>
+                  ? <div className="sub">from <input className="startedit" inputMode="decimal" value={active.startingBalance} onChange={(e) => setStart(e.target.value)} /> start · <input className="startedit" inputMode="decimal" value={active.toSavings || ""} placeholder="0" onChange={(e) => setToSavings(e.target.value)} /> to savings</div>
                   : <div className="sub num">from {usd(toNum(active.startingBalance))} start</div>}
               </div>
             </div>
@@ -715,7 +720,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
         )}
 
         {page === "savings" && (
-          <SavingsPage accounts={accounts} checking={endBal} contributions={contributions} activeMonthKey={state.activeMonth} monthLabel={active.label} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddContribution={addContribution} onDelContribution={delContribution} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddToHolding={addToHolding} />
+          <SavingsPage accounts={accounts} checking={endBal} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddToHolding={addToHolding} />
         )}
       </div>
 
@@ -1063,7 +1068,7 @@ function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDe
   );
 }
 
-function SavingsPage({ accounts, checking, contributions, activeMonthKey, monthLabel, onAddAccount, onEditAccount, onDelAccount, onAddContribution, onDelContribution, onAddHolding, onEditHolding, onDelHolding, onAddToHolding }) {
+function SavingsPage({ accounts, checking, onAddAccount, onEditAccount, onDelAccount, onAddHolding, onEditHolding, onDelHolding, onAddToHolding }) {
   const acctValue = (a) => a.type === "investment" ? (a.holdings || []).reduce((s, h) => s + toNum(h.value), 0) : toNum(a.balance);
   const acctInvested = (a) => a.type === "investment" ? (a.holdings || []).reduce((s, h) => s + toNum(h.invested), 0) : 0;
   const portfolio = accounts.reduce((s, a) => s + acctValue(a), 0);
@@ -1076,13 +1081,6 @@ function SavingsPage({ accounts, checking, contributions, activeMonthKey, monthL
   const [aName, setAName] = useState("");
   const [aType, setAType] = useState("cash");
   const addAcct = () => { if (!aName.trim()) return; onAddAccount(aName.trim(), aType); setAName(""); };
-
-  const today = new Date().toISOString().slice(0, 10);
-  const [cAmt, setCAmt] = useState("");
-  const [cDate, setCDate] = useState(today);
-  const addContrib = () => { if (!cAmt) return; onAddContribution(cAmt, cDate || today); setCAmt(""); setCDate(today); };
-  const sorted = contributions.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
-  const thisMonth = contributions.reduce((a, c) => (String(c.date || "").slice(0, 7) === activeMonthKey ? a + toNum(c.amount) : a), 0);
 
   const [contrib, setContrib] = useState("500");
   const [rate, setRate] = useState("5");
@@ -1121,32 +1119,6 @@ function SavingsPage({ accounts, checking, contributions, activeMonthKey, monthL
           </select>
           <button className="btn primary small" onClick={addAcct}>Add account</button>
         </div>
-      </div>
-
-      <div className="panel">
-        <div className="phead"><div className="t">Savings contributions</div><div className="hint">money you move into savings — dated, and pulled out of that month's checking</div></div>
-        {sorted.length === 0 ? (
-          <div className="empty">No contributions yet. Add one below — it won't count as spending, but it will lower the ending balance for the month it's dated in.</div>
-        ) : (
-          <table className="ledgerT">
-            <thead><tr><th>Date</th><th className="r">Amount</th><th style={{ width: 34 }}></th></tr></thead>
-            <tbody>
-              {sorted.map((c) => (
-                <tr key={c.id}>
-                  <td><span className="num" style={{ fontSize: "12.5px" }}>{fmtDate(c.date)}</span></td>
-                  <td className="r"><span className="num" style={{ fontWeight: 600 }}>{usd(toNum(c.amount))}</span></td>
-                  <td><button className="del" onClick={() => onDelContribution(c.id)} aria-label="Delete contribution">×</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <div className="addrow">
-          <input className="fname" type="date" value={cDate} onChange={(e) => setCDate(e.target.value)} />
-          <input className="famt" placeholder="Amount" inputMode="decimal" value={cAmt} onChange={(e) => setCAmt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addContrib()} />
-          <button className="btn primary small" onClick={addContrib}>Add</button>
-        </div>
-        <div className="subtotal"><span className="l">Into savings in {monthLabel}</span><span className="v num">{usd(thisMonth)}</span></div>
       </div>
 
       <div className="panel">
