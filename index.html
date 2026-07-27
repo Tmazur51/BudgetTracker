@@ -255,6 +255,26 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 .led .gl { font-family:var(--font-m); font-size:12px; font-weight:600; }
 .led .gl.up, .led .subtotal .v.up { color:var(--green); }
 .led .gl.down, .led .subtotal .v.down { color:var(--red); }
+.led .acct { border:1px solid var(--line); border-radius:12px; margin-bottom:10px; overflow:hidden; }
+.led .acctHead { display:flex; align-items:center; gap:8px; padding:9px 11px; background:var(--paper); border-bottom:1px solid var(--line); }
+.led .acctName { flex:1; min-width:0; border:1px solid transparent; background:transparent; font-family:var(--font-d); font-weight:600; font-size:14px; color:var(--ink); border-radius:7px; padding:5px 7px; }
+.led .acctName:hover { border-color:var(--line-2); background:#fff; }
+.led .acctName:focus { outline:none; border-color:var(--brand); background:#fff; box-shadow:0 0 0 3px var(--brand-tint); }
+.led select.acctType { -webkit-appearance:none; appearance:none; border:1px solid var(--line-2); background:#fff; border-radius:7px; font-family:var(--font-d); font-weight:600; font-size:11.5px; color:var(--ink-soft); padding:6px 22px 6px 9px; cursor:pointer; background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%2379888e' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>"); background-repeat:no-repeat; background-position:right 6px center; }
+.led .acctVal { font-family:var(--font-m); font-weight:600; font-size:15px; color:var(--ink); white-space:nowrap; }
+.led .acctBody { padding:12px; }
+.led .cashBody { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; }
+.led .cashField { display:flex; flex-direction:column; gap:5px; }
+.led .cashField span { font-family:var(--font-d); text-transform:uppercase; letter-spacing:.08em; font-size:10px; font-weight:600; color:var(--muted); }
+.led .cashField input { width:140px; border:1px solid var(--line-2); border-radius:8px; padding:8px 10px; font-family:var(--font-m); font-size:13.5px; background:#fff; color:var(--ink); }
+.led .cashField input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
+.led .cashNote { font-size:11.5px; color:var(--faint); font-family:var(--font-m); padding-bottom:9px; }
+.led .acctFoot { display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-top:10px; padding-top:9px; border-top:1px dashed var(--line); font-family:var(--font-d); font-size:11.5px; font-weight:600; color:var(--muted); }
+.led .acctFoot .gl { font-family:var(--font-m); }
+.led .addacct { display:flex; gap:8px; align-items:center; margin-top:4px; }
+.led .addacct input { flex:1; border:1px solid var(--line-2); border-radius:8px; padding:9px 10px; font-family:var(--font-b); font-size:13px; background:#fff; color:var(--ink); }
+.led .addacct input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
+.led .addacct select { -webkit-appearance:none; appearance:none; border:1px solid var(--line-2); background:#fff; border-radius:8px; font-family:var(--font-d); font-weight:600; font-size:12.5px; color:var(--ink-soft); padding:9px 26px 9px 10px; cursor:pointer; background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%2379888e' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>"); background-repeat:no-repeat; background-position:right 8px center; }
 
 @media (max-width:720px){
   .led .stats { grid-template-columns:1fr 1fr; }
@@ -271,7 +291,7 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V1.6</div>
+<div class="version">V1.7</div>
 <div id="root"><div class="boot">Loading Ledger…</div></div>
 
 <script>
@@ -369,13 +389,34 @@ function exportData(state) {
 }
 
 /* ---------- seed (from the spreadsheet) ---------- */
+function migrate(s) {
+  if (!s || typeof s !== "object") return seedState();
+  if (!s.investing) s.investing = {};
+  const inv = s.investing;
+  if (!Array.isArray(inv.accounts)) inv.accounts = [];
+  if (!Array.isArray(inv.contributions)) inv.contributions = [];
+  inv.accounts = inv.accounts.map((a) => ({
+    id: a.id || uid(),
+    name: a.name || "Account",
+    type: a.type || (Array.isArray(a.holdings) && a.holdings.length ? "investment" : "cash"),
+    balance: a.balance != null ? a.balance : "",
+    apy: a.apy != null ? a.apy : "",
+    holdings: Array.isArray(a.holdings) ? a.holdings : [],
+  }));
+  if (Array.isArray(inv.holdings) && inv.holdings.length) {
+    inv.accounts.push({ id: uid(), name: "Investments", type: "investment", balance: "", apy: "", holdings: inv.holdings });
+  }
+  delete inv.holdings;
+  return s;
+}
+
 function seedState() {
   const goals = { Gas:0.07, Fun:0.07, Groceries:0.12, "Eating Out":0.07, Misc:0.05, Frisbee:0.04, Utilities:0.26, Savings:0.32 };
   const categories = ["Gas","Fun","Groceries","Eating Out","Misc","Frisbee","Utilities","Savings"];
   const months = {
     "2026-05": { label: "May 2026", detailed: true, startingBalance: 0, income: [], expenses: [] },
   };
-  return { version: 1, settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045 }, months, activeMonth: "2026-05", investing: { accounts: [], contributions: [], holdings: [] } };
+  return { version: 1, settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045 }, months, activeMonth: "2026-05", investing: { accounts: [], contributions: [] } };
 }
 
 /* ============================ auth (cloud mode) ============================ */
@@ -471,7 +512,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
         loaded = await localLoad();
         if (!loaded) loaded = seedState();
       }
-      if (alive) { skipSave.current = true; setState(loaded); }
+      if (alive) { loaded = migrate(loaded); skipSave.current = true; setState(loaded); }
     })();
     return () => { alive = false; };
   }, [mode, userId]);
@@ -505,9 +546,9 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const active = state.months[state.activeMonth];
   const cats = state.settings.categories;
   const goals = state.settings.goals;
-  const investing = state.investing || { accounts: [], contributions: [], holdings: [] };
+  const investing = state.investing || { accounts: [], contributions: [] };
   const contributions = investing.contributions || [];
-  const holdings = investing.holdings || [];
+  const accounts = investing.accounts || [];
   const spendCats = cats.filter((c) => c !== "Savings");
   const savedThisMonth = contributions.reduce((a, c) => (String(c.date || "").slice(0, 7) === state.activeMonth ? a + toNum(c.amount) : a), 0);
   const totalSaved = contributions.reduce((a, c) => a + toNum(c.amount), 0);
@@ -549,14 +590,14 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const saveGoals = (newGoals, roth, apy) => mutate((s) => { s.settings.goals = newGoals; s.settings.rothMonthlyGoal = roth; s.settings.hysaAPY = apy; });
   const addMonth = (key, label, startBal) => mutate((s) => { if (s.months[key]) return; s.months[key] = { label, detailed: true, startingBalance: startBal, income: [], expenses: [] }; s.activeMonth = key; });
   const resetAll = () => { skipSave.current = false; setState(seedState()); };
-  const addAccount = (name, balance, apy) => mutate((s) => { if (!s.investing) s.investing = { accounts: [] }; s.investing.accounts.push({ id: uid(), name, balance, apy }); });
-  const editAccount = (id, field, value) => mutate((s) => { if (!s.investing) return; const a = s.investing.accounts.find((x) => x.id === id); if (a) a[field] = value; });
-  const delAccount = (id) => mutate((s) => { if (!s.investing) return; s.investing.accounts = s.investing.accounts.filter((x) => x.id !== id); });
+  const addAccount = (name, type) => mutate((s) => { if (!s.investing) s.investing = { accounts: [], contributions: [] }; s.investing.accounts.push({ id: uid(), name, type, balance: "", apy: "", holdings: [] }); });
+  const editAccount = (id, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === id); if (a) a[field] = value; });
+  const delAccount = (id) => mutate((s) => { s.investing.accounts = s.investing.accounts.filter((x) => x.id !== id); });
   const addContribution = (amount, date) => mutate((s) => { if (!s.investing) s.investing = { accounts: [], contributions: [] }; if (!s.investing.contributions) s.investing.contributions = []; s.investing.contributions.push({ id: uid(), amount, date }); });
   const delContribution = (id) => mutate((s) => { if (!s.investing || !s.investing.contributions) return; s.investing.contributions = s.investing.contributions.filter((c) => c.id !== id); });
-  const addHolding = (name, invested, value) => mutate((s) => { if (!s.investing) s.investing = { accounts: [], contributions: [], holdings: [] }; if (!s.investing.holdings) s.investing.holdings = []; s.investing.holdings.push({ id: uid(), name, invested, value }); });
-  const editHolding = (id, field, value) => mutate((s) => { if (!s.investing || !s.investing.holdings) return; const h = s.investing.holdings.find((x) => x.id === id); if (h) h[field] = value; });
-  const delHolding = (id) => mutate((s) => { if (!s.investing || !s.investing.holdings) return; s.investing.holdings = s.investing.holdings.filter((x) => x.id !== id); });
+  const addHolding = (acctId, name, invested, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a) { if (!a.holdings) a.holdings = []; a.holdings.push({ id: uid(), name, invested, value }); } });
+  const editHolding = (acctId, hId, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) h[field] = value; } });
+  const delHolding = (acctId, hId) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) a.holdings = a.holdings.filter((y) => y.id !== hId); });
 
   const handleImport = (e) => {
     const f = e.target.files && e.target.files[0];
@@ -667,7 +708,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
         )}
 
         {page === "savings" && (
-          <SavingsPage accounts={investing.accounts} checking={endBal} contributions={contributions} holdings={holdings} activeMonthKey={state.activeMonth} monthLabel={active.label} onAdd={addAccount} onEdit={editAccount} onDel={delAccount} onAddContribution={addContribution} onDelContribution={delContribution} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} />
+          <SavingsPage accounts={accounts} checking={endBal} contributions={contributions} activeMonthKey={state.activeMonth} monthLabel={active.label} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddContribution={addContribution} onDelContribution={delContribution} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} />
         )}
       </div>
 
@@ -928,24 +969,86 @@ function OverviewPage({ months, cats, totalSaved, onOpenMonth }) {
   );
 }
 
-function SavingsPage({ accounts, checking, contributions, holdings, activeMonthKey, monthLabel, onAdd, onEdit, onDel, onAddContribution, onDelContribution, onAddHolding, onEditHolding, onDelHolding }) {
-  const cashTotal = accounts.reduce((a, x) => a + toNum(x.balance), 0);
-  const invested = holdings.reduce((a, h) => a + toNum(h.invested), 0);
-  const holdValue = holdings.reduce((a, h) => a + toNum(h.value), 0);
-  const gain = holdValue - invested;
+function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDelHolding }) {
+  const isInv = account.type === "investment";
+  const holds = account.holdings || [];
+  const invested = holds.reduce((a, h) => a + toNum(h.invested), 0);
+  const value = isInv ? holds.reduce((a, h) => a + toNum(h.value), 0) : toNum(account.balance);
+  const gain = value - invested;
+  const gpct = invested > 0 ? gain / invested * 100 : 0;
+  const [hn, setHn] = useState("");
+  const [hi, setHi] = useState("");
+  const [hv, setHv] = useState("");
+  const addH = () => { if (!hn.trim() && !hi && !hv) return; onAddHolding(account.id, hn.trim() || "Holding", hi || "0", hv || hi || "0"); setHn(""); setHi(""); setHv(""); };
+
+  return (
+    <div className="acct">
+      <div className="acctHead">
+        <input className="acctName" value={account.name} onChange={(e) => onEdit(account.id, "name", e.target.value)} />
+        <select className="acctType" value={account.type} onChange={(e) => onEdit(account.id, "type", e.target.value)}>
+          <option value="cash">Cash / HYSA</option>
+          <option value="investment">Investments</option>
+        </select>
+        <div className="acctVal num">{usd(value)}</div>
+        <button className="del" onClick={() => onDel(account.id)} aria-label="Delete account">×</button>
+      </div>
+      {isInv ? (
+        <div className="acctBody">
+          {holds.length === 0 ? (
+            <div className="empty" style={{ padding: "6px 2px" }}>No holdings yet — add the stocks or funds in this account below.</div>
+          ) : (
+            <table className="ledgerT">
+              <thead><tr><th>Holding</th><th className="r">Invested</th><th className="r">Value</th><th className="r">Gain / loss</th><th style={{ width: 30 }}></th></tr></thead>
+              <tbody>
+                {holds.map((h) => {
+                  const inv = toNum(h.invested), val = toNum(h.value), g = val - inv, p = inv > 0 ? g / inv * 100 : 0;
+                  return (
+                    <tr key={h.id}>
+                      <td><input className="cell" value={h.name} onChange={(e) => onEditHolding(account.id, h.id, "name", e.target.value)} /></td>
+                      <td className="r"><input className="cell amt" inputMode="decimal" value={h.invested} onChange={(e) => onEditHolding(account.id, h.id, "invested", e.target.value)} /></td>
+                      <td className="r"><input className="cell amt" inputMode="decimal" value={h.value} onChange={(e) => onEditHolding(account.id, h.id, "value", e.target.value)} /></td>
+                      <td className="r"><span className={"gl " + (g >= 0 ? "up" : "down")}>{g >= 0 ? "+" : "−"}{usd0(Math.abs(g))}{inv > 0 ? " (" + (g >= 0 ? "+" : "−") + Math.abs(p).toFixed(1) + "%)" : ""}</span></td>
+                      <td><button className="del" onClick={() => onDelHolding(account.id, h.id)} aria-label="Delete holding">×</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+          <div className="addrow">
+            <input className="fname" placeholder="Holding (e.g. AAPL)" value={hn} onChange={(e) => setHn(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addH()} />
+            <input className="famt" placeholder="Invested" inputMode="decimal" value={hi} onChange={(e) => setHi(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addH()} />
+            <input className="famt" placeholder="Value" inputMode="decimal" value={hv} onChange={(e) => setHv(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addH()} />
+            <button className="btn primary small" onClick={addH}>Add</button>
+          </div>
+          {holds.length > 0 && (
+            <div className="acctFoot"><span>Invested {usd(invested)} · now {usd(value)}</span><span className={"gl " + (gain >= 0 ? "up" : "down")}>{gain >= 0 ? "+" : "−"}{usd(Math.abs(gain))}{invested > 0 ? " (" + (gain >= 0 ? "+" : "−") + Math.abs(gpct).toFixed(1) + "%)" : ""}</span></div>
+          )}
+        </div>
+      ) : (
+        <div className="acctBody cashBody">
+          <div className="cashField"><span>Balance</span><input inputMode="decimal" value={account.balance || ""} onChange={(e) => onEdit(account.id, "balance", e.target.value)} /></div>
+          <div className="cashField"><span>APY %</span><input inputMode="decimal" value={account.apy || ""} onChange={(e) => onEdit(account.id, "apy", e.target.value)} /></div>
+          <div className="cashNote">{toNum(account.apy) > 0 && toNum(account.balance) > 0 ? "≈ " + usd0(toNum(account.balance) * toNum(account.apy) / 100) + " / yr in interest" : ""}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SavingsPage({ accounts, checking, contributions, activeMonthKey, monthLabel, onAddAccount, onEditAccount, onDelAccount, onAddContribution, onDelContribution, onAddHolding, onEditHolding, onDelHolding }) {
+  const acctValue = (a) => a.type === "investment" ? (a.holdings || []).reduce((s, h) => s + toNum(h.value), 0) : toNum(a.balance);
+  const acctInvested = (a) => a.type === "investment" ? (a.holdings || []).reduce((s, h) => s + toNum(h.invested), 0) : 0;
+  const portfolio = accounts.reduce((s, a) => s + acctValue(a), 0);
+  const invested = accounts.reduce((s, a) => s + acctInvested(a), 0);
+  const investValue = accounts.filter((a) => a.type === "investment").reduce((s, a) => s + acctValue(a), 0);
+  const gain = investValue - invested;
   const gainPct = invested > 0 ? gain / invested * 100 : 0;
-  const portfolio = cashTotal + holdValue;
   const netWorth = portfolio + toNum(checking);
 
-  const [name, setName] = useState("");
-  const [bal, setBal] = useState("");
-  const [apy, setApy] = useState("");
-  const commit = () => { if (!name.trim() && !bal) return; onAdd(name.trim() || "Account", bal || "0", apy || ""); setName(""); setBal(""); setApy(""); };
-
-  const [hName, setHName] = useState("");
-  const [hInv, setHInv] = useState("");
-  const [hVal, setHVal] = useState("");
-  const addH = () => { if (!hName.trim() && !hInv && !hVal) return; onAddHolding(hName.trim() || "Holding", hInv || "0", hVal || hInv || "0"); setHName(""); setHInv(""); setHVal(""); };
+  const [aName, setAName] = useState("");
+  const [aType, setAType] = useState("cash");
+  const addAcct = () => { if (!aName.trim()) return; onAddAccount(aName.trim(), aType); setAName(""); };
 
   const today = new Date().toISOString().slice(0, 10);
   const [cAmt, setCAmt] = useState("");
@@ -971,39 +1074,26 @@ function SavingsPage({ accounts, checking, contributions, holdings, activeMonthK
           <div className={"tval num " + (gain >= 0 ? "pos" : "neg")}>{gain >= 0 ? "+" : "−"}{usd0(Math.abs(gain))}</div>
           <div className="tsub">{invested > 0 ? (gain >= 0 ? "+" : "−") + Math.abs(gainPct).toFixed(1) + "% on what you invested" : "add holdings to track"}</div>
         </div>
-        <div className="tile pos"><div className="tlab">Net worth</div><div className="tval num pos">{usd(netWorth)}</div><div className="tsub">investments + checking</div></div>
+        <div className="tile pos"><div className="tlab">Net worth</div><div className="tval num pos">{usd(netWorth)}</div><div className="tsub">accounts + checking</div></div>
       </div>
 
       <div className="panel">
-        <div className="phead"><div className="t">Stocks &amp; investments</div><div className="hint">what you put in vs. what it's worth now — update "value now" whenever you check</div></div>
-        {holdings.length === 0 ? (
-          <div className="empty">No holdings yet. Add a stock or fund below with how much you put in and what it's worth now — then come back and update the value to see if it's made you money.</div>
+        <div className="phead"><div className="t">Your accounts</div><div className="hint">cash accounts track a balance &amp; APY; investment accounts hold your stocks</div></div>
+        {accounts.length === 0 ? (
+          <div className="empty">No accounts yet — add your Wealthfront HYSA, Fidelity Roth, Fidelity Individual, and so on below.</div>
         ) : (
-          <table className="ledgerT">
-            <thead><tr><th>Holding</th><th className="r">Invested</th><th className="r">Value now</th><th className="r">Gain / loss</th><th style={{ width: 34 }}></th></tr></thead>
-            <tbody>
-              {holdings.map((h) => {
-                const inv = toNum(h.invested), val = toNum(h.value), g = val - inv, p = inv > 0 ? g / inv * 100 : 0;
-                return (
-                  <tr key={h.id}>
-                    <td><input className="cell" value={h.name} onChange={(e) => onEditHolding(h.id, "name", e.target.value)} /></td>
-                    <td className="r"><input className="cell amt" inputMode="decimal" value={h.invested} onChange={(e) => onEditHolding(h.id, "invested", e.target.value)} /></td>
-                    <td className="r"><input className="cell amt" inputMode="decimal" value={h.value} onChange={(e) => onEditHolding(h.id, "value", e.target.value)} /></td>
-                    <td className="r"><span className={"gl " + (g >= 0 ? "up" : "down")}>{g >= 0 ? "+" : "−"}{usd0(Math.abs(g))}{inv > 0 ? " (" + (g >= 0 ? "+" : "−") + Math.abs(p).toFixed(1) + "%)" : ""}</span></td>
-                    <td><button className="del" onClick={() => onDelHolding(h.id)} aria-label="Delete holding">×</button></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          accounts.map((a) => (
+            <AccountCard key={a.id} account={a} onEdit={onEditAccount} onDel={onDelAccount} onAddHolding={onAddHolding} onEditHolding={onEditHolding} onDelHolding={onDelHolding} />
+          ))
         )}
-        <div className="addrow">
-          <input className="fname" placeholder="Holding (e.g. AAPL, VTI)" value={hName} onChange={(e) => setHName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addH()} />
-          <input className="famt" placeholder="Invested" inputMode="decimal" value={hInv} onChange={(e) => setHInv(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addH()} />
-          <input className="famt" placeholder="Value now" inputMode="decimal" value={hVal} onChange={(e) => setHVal(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addH()} />
-          <button className="btn primary small" onClick={addH}>Add</button>
+        <div className="addacct">
+          <input placeholder="Account name (e.g. Fidelity Roth)" value={aName} onChange={(e) => setAName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addAcct()} />
+          <select value={aType} onChange={(e) => setAType(e.target.value)}>
+            <option value="cash">Cash / HYSA</option>
+            <option value="investment">Investments</option>
+          </select>
+          <button className="btn primary small" onClick={addAcct}>Add account</button>
         </div>
-        <div className="subtotal"><span className="l">Invested {usd(invested)} · now {usd(holdValue)}</span><span className={"v num " + (gain >= 0 ? "up" : "down")}>{gain >= 0 ? "+" : "−"}{usd(Math.abs(gain))}</span></div>
       </div>
 
       <div className="panel">
@@ -1030,34 +1120,6 @@ function SavingsPage({ accounts, checking, contributions, holdings, activeMonthK
           <button className="btn primary small" onClick={addContrib}>Add</button>
         </div>
         <div className="subtotal"><span className="l">Into savings in {monthLabel}</span><span className="v num">{usd(thisMonth)}</span></div>
-      </div>
-
-      <div className="panel">
-        <div className="phead"><div className="t">Cash &amp; savings accounts</div><div className="hint">interest-bearing balances — update to match your statements</div></div>
-        {accounts.length === 0 ? (
-          <div className="empty">No accounts yet. Add your HYSA, Roth, or any cash savings below.</div>
-        ) : (
-          <table className="ledgerT">
-            <thead><tr><th>Account</th><th className="r">Balance</th><th className="r">APY %</th><th style={{ width: 34 }}></th></tr></thead>
-            <tbody>
-              {accounts.map((a) => (
-                <tr key={a.id}>
-                  <td><input className="cell" value={a.name} onChange={(e) => onEdit(a.id, "name", e.target.value)} /></td>
-                  <td className="r"><input className="cell amt" inputMode="decimal" value={a.balance} onChange={(e) => onEdit(a.id, "balance", e.target.value)} /></td>
-                  <td className="r"><input className="cell amt" inputMode="decimal" value={a.apy || ""} onChange={(e) => onEdit(a.id, "apy", e.target.value)} /></td>
-                  <td><button className="del" onClick={() => onDel(a.id)} aria-label="Delete account">×</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <div className="addrow">
-          <input className="fname" placeholder="Account (e.g. HYSA)" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
-          <input className="famt" placeholder="Balance" inputMode="decimal" value={bal} onChange={(e) => setBal(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
-          <input className="famt" style={{ maxWidth: 78 }} placeholder="APY %" inputMode="decimal" value={apy} onChange={(e) => setApy(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
-          <button className="btn primary small" onClick={commit}>Add</button>
-        </div>
-        <div className="subtotal"><span className="l">Total in accounts</span><span className="v num">{usd(cashTotal)}</span></div>
       </div>
 
       <div className="panel">
