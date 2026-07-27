@@ -86,6 +86,8 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 .led .stat .val.pos { color:var(--green); }
 .led .stat .val.neg { color:var(--red); }
 .led .stat .sub { font-size:11px; color:var(--faint); margin-top:3px; }
+.led .stat .startedit { font-family:var(--font-m); font-size:11px; color:var(--ink-soft); width:66px; border:1px solid var(--line); border-radius:5px; padding:1px 5px; background:#fff; text-align:right; }
+.led .stat .startedit:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 2px var(--brand-tint); color:var(--ink); }
 
 .led .panel { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px 18px 20px; margin-bottom:16px; }
 .led .phead { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:16px; }
@@ -302,28 +304,10 @@ function exportData(state) {
 function seedState() {
   const goals = { Gas:0.07, Fun:0.07, Groceries:0.12, "Eating Out":0.07, Misc:0.05, Frisbee:0.04, Utilities:0.26, Savings:0.32 };
   const categories = ["Gas","Fun","Groceries","Eating Out","Misc","Frisbee","Utilities","Savings"];
-  const hist = {
-    "2025-06": [3346.05, 2287.57, 1339.05, 2397.53],
-    "2025-07": [2870.86, 1616.94, 2397.53, 3651.45],
-    "2025-08": [3826.17, 2746.66, 3651.45, 4730.96],
-    "2025-09": [1126.23, 2771.24, 4898.15, 3253.14],
-    "2025-10": [1041.89, 1182.48, 3200.70, 3060.11],
-    "2025-11": [886.07, 1433.35, 3168.73, 2621.45],
-    "2025-12": [545.10, 713.46, 2415.95, 2247.59],
-    "2026-01": [1096.51, 1134.70, 1840.07, 1801.88],
+  const months = {
+    "2026-05": { label: "May 2026", detailed: true, startingBalance: 0, income: [], expenses: [] },
   };
-  const months = {};
-  Object.entries(hist).forEach(([key, arr]) => {
-    const inc = arr[0], exp = arr[1], start = arr[2], end = arr[3];
-    const parts = key.split("-");
-    months[key] = {
-      label: MONTH_NAMES[+parts[1] - 1] + " " + parts[0],
-      detailed: false, summary: { income: inc, expense: exp },
-      startingBalance: start, endingBalance: end, income: [], expenses: [],
-    };
-  });
-  months["2026-02"] = { label: "February 2026", detailed: true, startingBalance: 1801.88, income: [], expenses: [] };
-  return { version: 1, settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045 }, months, activeMonth: "2026-02" };
+  return { version: 1, settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045 }, months, activeMonth: "2026-05" };
 }
 
 /* ============================ auth (cloud mode) ============================ */
@@ -473,6 +457,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
 
   const mutate = (fn) => setState((prev) => { const next = JSON.parse(JSON.stringify(prev)); fn(next); return next; });
   const setActive = (key) => mutate((s) => { s.activeMonth = key; });
+  const setStart = (v) => mutate((s) => { s.months[s.activeMonth].startingBalance = v; });
   const addIncome = (source, amount) => mutate((s) => { s.months[s.activeMonth].income.push({ id: uid(), source, amount }); });
   const addExpense = (name, amount, category) => mutate((s) => { s.months[s.activeMonth].expenses.push({ id: uid(), name, amount, category }); });
   const editRow = (list, id, field, value) => mutate((s) => { const row = s.months[s.activeMonth][list].find((r) => r.id === id); if (row) row[field] = value; });
@@ -536,7 +521,9 @@ function BudgetLedger({ mode, session, onSignOut }) {
           <div className={"stat end " + (endBal >= toNum(active.startingBalance) ? "pos" : "neg")}>
             <div className="lab">Ending balance</div>
             <div className="val num">{usd(endBal)}</div>
-            <div className="sub num">from {usd(toNum(active.startingBalance))} start</div>
+            {active.detailed
+              ? <div className="sub">from <input className="startedit" inputMode="decimal" value={active.startingBalance} onChange={(e) => setStart(e.target.value)} /> start</div>
+              : <div className="sub num">from {usd(toNum(active.startingBalance))} start</div>}
           </div>
         </div>
 
