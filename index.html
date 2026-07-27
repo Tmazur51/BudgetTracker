@@ -268,7 +268,7 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V1.4</div>
+<div class="version">V1.5</div>
 <div id="root"><div class="boot">Loading Ledger…</div></div>
 
 <script>
@@ -352,7 +352,8 @@ async function cloudSave(uid, state) {
 const usd = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n || 0);
 const usd0 = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n || 0);
 const uid = () => Math.random().toString(36).slice(2, 9);
-const sumAmt = (rows) => rows.reduce((a, r) => a + (r.excluded ? 0 : toNum(r.amount)), 0);
+const sumAmt = (rows) => rows.reduce((a, r) => a + ((r.excluded || r.category === "Savings") ? 0 : toNum(r.amount)), 0);
+const fmtDate = (d) => { const p = String(d || "").split("-"); if (p.length !== 3) return d || ""; return MONTH_NAMES[+p[1] - 1].slice(0, 3) + " " + (+p[2]); };
 const toNum = (s) => { const v = parseFloat(String(s).replace(/[^0-9.\-]/g, "")); return isNaN(v) ? 0 : v; };
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -371,7 +372,7 @@ function seedState() {
   const months = {
     "2026-05": { label: "May 2026", detailed: true, startingBalance: 0, income: [], expenses: [] },
   };
-  return { version: 1, settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045 }, months, activeMonth: "2026-05", investing: { accounts: [] } };
+  return { version: 1, settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045 }, months, activeMonth: "2026-05", investing: { accounts: [], contributions: [] } };
 }
 
 /* ============================ auth (cloud mode) ============================ */
@@ -501,18 +502,22 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const active = state.months[state.activeMonth];
   const cats = state.settings.categories;
   const goals = state.settings.goals;
-  const investing = state.investing || { accounts: [] };
+  const investing = state.investing || { accounts: [], contributions: [] };
+  const contributions = investing.contributions || [];
+  const spendCats = cats.filter((c) => c !== "Savings");
+  const savedThisMonth = contributions.reduce((a, c) => (String(c.date || "").slice(0, 7) === state.activeMonth ? a + toNum(c.amount) : a), 0);
+  const totalSaved = contributions.reduce((a, c) => a + toNum(c.amount), 0);
 
   const totalIncome = active.detailed ? sumAmt(active.income) : active.summary.income;
   const totalExpense = active.detailed ? sumAmt(active.expenses) : active.summary.expense;
   const cashFlow = totalIncome - totalExpense;
-  const endBal = active.detailed ? (toNum(active.startingBalance) + cashFlow)
+  const endBal = active.detailed ? (toNum(active.startingBalance) + cashFlow - savedThisMonth)
     : (active.endingBalance != null ? active.endingBalance : toNum(active.startingBalance) + cashFlow);
 
   const actualByCat = {};
   cats.forEach((c) => (actualByCat[c] = 0));
   if (active.detailed) active.expenses.forEach((r) => {
-    if (r.excluded) return;
+    if (r.excluded || r.category === "Savings") return;
     if (actualByCat[r.category] === undefined) actualByCat[r.category] = 0;
     actualByCat[r.category] += toNum(r.amount);
   });
@@ -543,6 +548,8 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const addAccount = (name, balance, apy) => mutate((s) => { if (!s.investing) s.investing = { accounts: [] }; s.investing.accounts.push({ id: uid(), name, balance, apy }); });
   const editAccount = (id, field, value) => mutate((s) => { if (!s.investing) return; const a = s.investing.accounts.find((x) => x.id === id); if (a) a[field] = value; });
   const delAccount = (id) => mutate((s) => { if (!s.investing) return; s.investing.accounts = s.investing.accounts.filter((x) => x.id !== id); });
+  const addContribution = (amount, date) => mutate((s) => { if (!s.investing) s.investing = { accounts: [], contributions: [] }; if (!s.investing.contributions) s.investing.contributions = []; s.investing.contributions.push({ id: uid(), amount, date }); });
+  const delContribution = (id) => mutate((s) => { if (!s.investing || !s.investing.contributions) return; s.investing.contributions = s.investing.contributions.filter((c) => c.id !== id); });
 
   const handleImport = (e) => {
     const f = e.target.files && e.target.files[0];
@@ -610,7 +617,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
                 <div className="lab">Ending balance</div>
                 <div className="val num">{usd(endBal)}</div>
                 {active.detailed
-                  ? <div className="sub">from <input className="startedit" inputMode="decimal" value={active.startingBalance} onChange={(e) => setStart(e.target.value)} /> start</div>
+                  ? <div className="sub">from <input className="startedit" inputMode="decimal" value={active.startingBalance} onChange={(e) => setStart(e.target.value)} /> start{savedThisMonth > 0 ? " · −" + usd0(savedThisMonth) + " to savings" : ""}</div>
                   : <div className="sub num">from {usd(toNum(active.startingBalance))} start</div>}
               </div>
             </div>
@@ -623,7 +630,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
               {active.detailed ? (
                 totalIncome > 0 ? (
                   <div className="meters">
-                    {cats.map((c) => (<Meter key={c} name={c} pct={goals[c] || 0} target={(goals[c] || 0) * totalIncome} actual={actualByCat[c] || 0} isSavings={c === "Savings"} />))}
+                    {spendCats.map((c) => (<Meter key={c} name={c} pct={goals[c] || 0} target={(goals[c] || 0) * totalIncome} actual={actualByCat[c] || 0} isSavings={false} />))}
                   </div>
                 ) : (<div className="empty">Log some income below and your category targets will populate here.</div>)
               ) : (<div className="empty">This month was imported as monthly totals only. Add its transactions to see the category breakdown.</div>)}
@@ -637,7 +644,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
                 </div>
                 <div className="panel">
                   <div className="phead"><div className="t">Money out</div></div>
-                  <ExpenseTable rows={active.expenses} cats={cats} onEdit={editRow} onDel={delRow} onAdd={addExpense} total={totalExpense} />
+                  <ExpenseTable rows={active.expenses} cats={spendCats} onEdit={editRow} onDel={delRow} onAdd={addExpense} total={totalExpense} />
                 </div>
               </div>
             )}
@@ -649,16 +656,16 @@ function BudgetLedger({ mode, session, onSignOut }) {
         )}
 
         {page === "overview" && (
-          <OverviewPage months={state.months} cats={cats} onOpenMonth={(k) => { setActive(k); setPage("log"); }} />
+          <OverviewPage months={state.months} cats={cats} totalSaved={totalSaved} onOpenMonth={(k) => { setActive(k); setPage("log"); }} />
         )}
 
         {page === "savings" && (
-          <SavingsPage accounts={investing.accounts} checking={endBal} savedThisMonth={savedActual} monthLabel={active.label} onAdd={addAccount} onEdit={editAccount} onDel={delAccount} />
+          <SavingsPage accounts={investing.accounts} checking={endBal} contributions={contributions} activeMonthKey={state.activeMonth} monthLabel={active.label} onAdd={addAccount} onEdit={editAccount} onDel={delAccount} onAddContribution={addContribution} onDelContribution={delContribution} />
         )}
       </div>
 
       {showGoals && (
-        <GoalsModal cats={cats} goals={goals} roth={state.settings.rothMonthlyGoal} apy={state.settings.hysaAPY}
+        <GoalsModal cats={spendCats} goals={goals} roth={state.settings.rothMonthlyGoal} apy={state.settings.hysaAPY}
           onClose={() => setShowGoals(false)}
           onSave={(g, r, a) => { saveGoals(g, r, a); setShowGoals(false); }}
           onReset={() => { resetAll(); setShowGoals(false); }} />
@@ -848,7 +855,7 @@ function CashFlowChart({ rows, onPick }) {
   );
 }
 
-function OverviewPage({ months, cats, onOpenMonth }) {
+function OverviewPage({ months, cats, totalSaved, onOpenMonth }) {
   const keys = Object.keys(months).sort();
   const rows = keys.map((k) => {
     const m = months[k];
@@ -868,7 +875,6 @@ function OverviewPage({ months, cats, onOpenMonth }) {
     const m = months[k];
     if (m.detailed) m.expenses.forEach((r) => { if (!r.excluded) catTotals[r.category] = (catTotals[r.category] || 0) + toNum(r.amount); });
   });
-  const totalSaved = catTotals["Savings"] || 0;
   const catList = cats.filter((c) => c !== "Savings").map((c) => ({ c, v: catTotals[c] || 0 })).sort((a, b) => b.v - a.v);
   const catMax = Math.max(1, ...catList.map((x) => x.v));
 
@@ -915,13 +921,21 @@ function OverviewPage({ months, cats, onOpenMonth }) {
   );
 }
 
-function SavingsPage({ accounts, checking, savedThisMonth, monthLabel, onAdd, onEdit, onDel }) {
+function SavingsPage({ accounts, checking, contributions, activeMonthKey, monthLabel, onAdd, onEdit, onDel, onAddContribution, onDelContribution }) {
   const total = accounts.reduce((a, x) => a + toNum(x.balance), 0);
   const netWorth = total + toNum(checking);
   const [name, setName] = useState("");
   const [bal, setBal] = useState("");
   const [apy, setApy] = useState("");
   const commit = () => { if (!name.trim() && !bal) return; onAdd(name.trim() || "Account", bal || "0", apy || ""); setName(""); setBal(""); setApy(""); };
+
+  const today = new Date().toISOString().slice(0, 10);
+  const [cAmt, setCAmt] = useState("");
+  const [cDate, setCDate] = useState(today);
+  const addContrib = () => { if (!cAmt) return; onAddContribution(cAmt, cDate || today); setCAmt(""); setCDate(today); };
+  const sorted = contributions.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const thisMonth = contributions.reduce((a, c) => (String(c.date || "").slice(0, 7) === activeMonthKey ? a + toNum(c.amount) : a), 0);
+  const allTime = contributions.reduce((a, c) => a + toNum(c.amount), 0);
 
   const [contrib, setContrib] = useState("500");
   const [rate, setRate] = useState("5");
@@ -935,12 +949,38 @@ function SavingsPage({ accounts, checking, savedThisMonth, monthLabel, onAdd, on
     <React.Fragment>
       <div className="tiles">
         <div className="tile brand"><div className="tlab">Savings &amp; investments</div><div className="tval num brand">{usd(total)}</div></div>
-        <div className="tile"><div className="tlab">Current checking</div><div className="tval num">{usd(toNum(checking))}</div></div>
+        <div className="tile"><div className="tlab">Contributed all-time</div><div className="tval num">{usd(allTime)}</div></div>
         <div className="tile pos"><div className="tlab">Net worth</div><div className="tval num pos">{usd(netWorth)}</div><div className="tsub">savings + checking</div></div>
       </div>
 
       <div className="panel">
-        <div className="phead"><div className="t">Accounts</div><div className="hint">update the balances whenever you like</div></div>
+        <div className="phead"><div className="t">Savings contributions</div><div className="hint">money you move into savings — dated, and pulled out of that month's checking</div></div>
+        {sorted.length === 0 ? (
+          <div className="empty">No contributions yet. Add one below — it won't count as spending, but it will lower the ending balance for the month it's dated in.</div>
+        ) : (
+          <table className="ledgerT">
+            <thead><tr><th>Date</th><th className="r">Amount</th><th style={{ width: 34 }}></th></tr></thead>
+            <tbody>
+              {sorted.map((c) => (
+                <tr key={c.id}>
+                  <td><span className="num" style={{ fontSize: "12.5px" }}>{fmtDate(c.date)}</span></td>
+                  <td className="r"><span className="num" style={{ fontWeight: 600 }}>{usd(toNum(c.amount))}</span></td>
+                  <td><button className="del" onClick={() => onDelContribution(c.id)} aria-label="Delete contribution">×</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div className="addrow">
+          <input className="fname" type="date" value={cDate} onChange={(e) => setCDate(e.target.value)} />
+          <input className="famt" placeholder="Amount" inputMode="decimal" value={cAmt} onChange={(e) => setCAmt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addContrib()} />
+          <button className="btn primary small" onClick={addContrib}>Add</button>
+        </div>
+        <div className="subtotal"><span className="l">Into savings in {monthLabel}</span><span className="v num">{usd(thisMonth)}</span></div>
+      </div>
+
+      <div className="panel">
+        <div className="phead"><div className="t">Accounts</div><div className="hint">where the money lives — update balances to match your statements</div></div>
         {accounts.length === 0 ? (
           <div className="empty">No accounts yet. Add your HYSA, Roth, brokerage — whatever you want to track — below.</div>
         ) : (
@@ -964,12 +1004,7 @@ function SavingsPage({ accounts, checking, savedThisMonth, monthLabel, onAdd, on
           <input className="famt" style={{ maxWidth: 78 }} placeholder="APY %" inputMode="decimal" value={apy} onChange={(e) => setApy(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
           <button className="btn primary small" onClick={commit}>Add</button>
         </div>
-        <div className="subtotal"><span className="l">Total saved</span><span className="v num">{usd(total)}</span></div>
-      </div>
-
-      <div className="panel">
-        <div className="phead"><div className="t">This month</div></div>
-        <div className="splitnote">You've moved <b>{usd(savedThisMonth)}</b> into savings in {monthLabel} — anything logged under the Savings category on the Log page. No target, no pressure; just a running tally.</div>
+        <div className="subtotal"><span className="l">Total in accounts</span><span className="v num">{usd(total)}</span></div>
       </div>
 
       <div className="panel">
