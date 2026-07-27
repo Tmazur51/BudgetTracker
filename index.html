@@ -275,6 +275,12 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 .led .addacct input { flex:1; border:1px solid var(--line-2); border-radius:8px; padding:9px 10px; font-family:var(--font-b); font-size:13px; background:#fff; color:var(--ink); }
 .led .addacct input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
 .led .addacct select { -webkit-appearance:none; appearance:none; border:1px solid var(--line-2); background:#fff; border-radius:8px; font-family:var(--font-d); font-weight:600; font-size:12.5px; color:var(--ink-soft); padding:9px 26px 9px 10px; cursor:pointer; background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%2379888e' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>"); background-repeat:no-repeat; background-position:right 8px center; }
+.led .addbtn { border:1px solid var(--line-2); background:#fff; color:var(--brand); cursor:pointer; font-size:15px; line-height:1; padding:2px 7px; border-radius:6px; font-weight:600; margin-right:2px; }
+.led .addbtn:hover { background:var(--brand); color:#fff; border-color:var(--brand); }
+.led .addto { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:8px 2px 4px; }
+.led .addto .lbl { font-size:12px; color:var(--ink-soft); font-family:var(--font-d); font-weight:600; }
+.led .addto input { border:1px solid var(--line-2); border-radius:8px; padding:7px 9px; font-family:var(--font-m); font-size:13px; background:#fff; color:var(--ink); width:150px; }
+.led .addto input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
 
 @media (max-width:720px){
   .led .stats { grid-template-columns:1fr 1fr; }
@@ -291,7 +297,7 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V1.7</div>
+<div class="version">V1.8</div>
 <div id="root"><div class="boot">Loading Ledger…</div></div>
 
 <script>
@@ -598,6 +604,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const addHolding = (acctId, name, invested, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a) { if (!a.holdings) a.holdings = []; a.holdings.push({ id: uid(), name, invested, value }); } });
   const editHolding = (acctId, hId, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) h[field] = value; } });
   const delHolding = (acctId, hId) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) a.holdings = a.holdings.filter((y) => y.id !== hId); });
+  const addToHolding = (acctId, hId, amount) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) { const add = toNum(amount); h.invested = String(toNum(h.invested) + add); h.value = String(toNum(h.value) + add); } } });
 
   const handleImport = (e) => {
     const f = e.target.files && e.target.files[0];
@@ -708,7 +715,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
         )}
 
         {page === "savings" && (
-          <SavingsPage accounts={accounts} checking={endBal} contributions={contributions} activeMonthKey={state.activeMonth} monthLabel={active.label} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddContribution={addContribution} onDelContribution={delContribution} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} />
+          <SavingsPage accounts={accounts} checking={endBal} contributions={contributions} activeMonthKey={state.activeMonth} monthLabel={active.label} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddContribution={addContribution} onDelContribution={delContribution} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddToHolding={addToHolding} />
         )}
       </div>
 
@@ -969,7 +976,7 @@ function OverviewPage({ months, cats, totalSaved, onOpenMonth }) {
   );
 }
 
-function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDelHolding }) {
+function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDelHolding, onAddToHolding }) {
   const isInv = account.type === "investment";
   const holds = account.holdings || [];
   const invested = holds.reduce((a, h) => a + toNum(h.invested), 0);
@@ -980,6 +987,9 @@ function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDe
   const [hi, setHi] = useState("");
   const [hv, setHv] = useState("");
   const addH = () => { if (!hn.trim() && !hi && !hv) return; onAddHolding(account.id, hn.trim() || "Holding", hi || "0", hv || hi || "0"); setHn(""); setHi(""); setHv(""); };
+  const [addId, setAddId] = useState(null);
+  const [addAmt, setAddAmt] = useState("");
+  const doAdd = (hid) => { if (!addAmt) { setAddId(null); return; } onAddToHolding(account.id, hid, addAmt); setAddAmt(""); setAddId(null); };
 
   return (
     <div className="acct">
@@ -1003,13 +1013,30 @@ function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDe
                 {holds.map((h) => {
                   const inv = toNum(h.invested), val = toNum(h.value), g = val - inv, p = inv > 0 ? g / inv * 100 : 0;
                   return (
-                    <tr key={h.id}>
-                      <td><input className="cell" value={h.name} onChange={(e) => onEditHolding(account.id, h.id, "name", e.target.value)} /></td>
-                      <td className="r"><input className="cell amt" inputMode="decimal" value={h.invested} onChange={(e) => onEditHolding(account.id, h.id, "invested", e.target.value)} /></td>
-                      <td className="r"><input className="cell amt" inputMode="decimal" value={h.value} onChange={(e) => onEditHolding(account.id, h.id, "value", e.target.value)} /></td>
-                      <td className="r"><span className={"gl " + (g >= 0 ? "up" : "down")}>{g >= 0 ? "+" : "−"}{usd0(Math.abs(g))}{inv > 0 ? " (" + (g >= 0 ? "+" : "−") + Math.abs(p).toFixed(1) + "%)" : ""}</span></td>
-                      <td><button className="del" onClick={() => onDelHolding(account.id, h.id)} aria-label="Delete holding">×</button></td>
-                    </tr>
+                    <React.Fragment key={h.id}>
+                      <tr>
+                        <td><input className="cell" value={h.name} onChange={(e) => onEditHolding(account.id, h.id, "name", e.target.value)} /></td>
+                        <td className="r"><input className="cell amt" inputMode="decimal" value={h.invested} onChange={(e) => onEditHolding(account.id, h.id, "invested", e.target.value)} /></td>
+                        <td className="r"><input className="cell amt" inputMode="decimal" value={h.value} onChange={(e) => onEditHolding(account.id, h.id, "value", e.target.value)} /></td>
+                        <td className="r"><span className={"gl " + (g >= 0 ? "up" : "down")}>{g >= 0 ? "+" : "−"}{usd0(Math.abs(g))}{inv > 0 ? " (" + (g >= 0 ? "+" : "−") + Math.abs(p).toFixed(1) + "%)" : ""}</span></td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          <button className="addbtn" onClick={() => { setAddId(addId === h.id ? null : h.id); setAddAmt(""); }} title="Add a purchase">+</button>
+                          <button className="del" onClick={() => onDelHolding(account.id, h.id)} aria-label="Delete holding">×</button>
+                        </td>
+                      </tr>
+                      {addId === h.id && (
+                        <tr>
+                          <td colSpan={5}>
+                            <div className="addto">
+                              <span className="lbl">Add a purchase to {h.name || "this holding"}:</span>
+                              <input placeholder="Amount invested" inputMode="decimal" autoFocus value={addAmt} onChange={(e) => setAddAmt(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doAdd(h.id); if (e.key === "Escape") { setAddId(null); setAddAmt(""); } }} />
+                              <button className="btn primary small" onClick={() => doAdd(h.id)}>Add</button>
+                              <button className="btn ghost small" onClick={() => { setAddId(null); setAddAmt(""); }}>Cancel</button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
@@ -1036,7 +1063,7 @@ function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDe
   );
 }
 
-function SavingsPage({ accounts, checking, contributions, activeMonthKey, monthLabel, onAddAccount, onEditAccount, onDelAccount, onAddContribution, onDelContribution, onAddHolding, onEditHolding, onDelHolding }) {
+function SavingsPage({ accounts, checking, contributions, activeMonthKey, monthLabel, onAddAccount, onEditAccount, onDelAccount, onAddContribution, onDelContribution, onAddHolding, onEditHolding, onDelHolding, onAddToHolding }) {
   const acctValue = (a) => a.type === "investment" ? (a.holdings || []).reduce((s, h) => s + toNum(h.value), 0) : toNum(a.balance);
   const acctInvested = (a) => a.type === "investment" ? (a.holdings || []).reduce((s, h) => s + toNum(h.invested), 0) : 0;
   const portfolio = accounts.reduce((s, a) => s + acctValue(a), 0);
@@ -1083,7 +1110,7 @@ function SavingsPage({ accounts, checking, contributions, activeMonthKey, monthL
           <div className="empty">No accounts yet — add your Wealthfront HYSA, Fidelity Roth, Fidelity Individual, and so on below.</div>
         ) : (
           accounts.map((a) => (
-            <AccountCard key={a.id} account={a} onEdit={onEditAccount} onDel={onDelAccount} onAddHolding={onAddHolding} onEditHolding={onEditHolding} onDelHolding={onDelHolding} />
+            <AccountCard key={a.id} account={a} onEdit={onEditAccount} onDel={onDelAccount} onAddHolding={onAddHolding} onEditHolding={onEditHolding} onDelHolding={onDelHolding} onAddToHolding={onAddToHolding} />
           ))
         )}
         <div className="addacct">
