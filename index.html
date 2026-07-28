@@ -305,7 +305,7 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V2.3</div>
+<div class="version">V2.5</div>
 <div id="root"><div class="boot">Loading Ledger…</div></div>
 
 <script>
@@ -392,6 +392,7 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 const sumAmt = (rows) => rows.reduce((a, r) => a + ((r.excluded || r.category === "Savings") ? 0 : toNum(r.amount)), 0);
 const fmtDate = (d) => { const p = String(d || "").split("-"); if (p.length !== 3) return d || ""; return MONTH_NAMES[+p[1] - 1].slice(0, 3) + " " + (+p[2]); };
 const toNum = (s) => { const v = parseFloat(String(s).replace(/[^0-9.\-]/g, "")); return isNaN(v) ? 0 : v; };
+const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function exportData(state) {
@@ -417,7 +418,12 @@ function migrate(s) {
       type,
       balance: a.balance != null ? a.balance : "",
       apy: a.apy != null ? a.apy : "",
-      holdings: Array.isArray(a.holdings) ? a.holdings : [],
+      holdings: (Array.isArray(a.holdings) ? a.holdings : []).map((h) => ({
+        id: h.id || uid(),
+        name: h.name != null ? h.name : "",
+        invested: (h.invested === "" || h.invested == null) ? "" : String(round2(toNum(h.invested))),
+        value: (h.value === "" || h.value == null) ? "" : String(round2(toNum(h.value))),
+      })),
     };
   });
   if (Array.isArray(inv.holdings) && inv.holdings.length) {
@@ -428,7 +434,7 @@ function migrate(s) {
   if (Array.isArray(inv.contributions) && inv.contributions.length && s.months) {
     inv.contributions.forEach((c) => {
       const key = String(c.date || "").slice(0, 7);
-      if (s.months[key]) s.months[key].toSavings = String(toNum(s.months[key].toSavings) + toNum(c.amount));
+      if (s.months[key]) s.months[key].toSavings = String(round2(toNum(s.months[key].toSavings) + toNum(c.amount)));
     });
   }
   delete inv.contributions;
@@ -635,7 +641,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const addHolding = (acctId, name, invested, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a) { if (!a.holdings) a.holdings = []; a.holdings.push({ id: uid(), name, invested, value }); } });
   const editHolding = (acctId, hId, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) h[field] = value; } });
   const delHolding = (acctId, hId) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) a.holdings = a.holdings.filter((y) => y.id !== hId); });
-  const addToHolding = (acctId, hId, amount) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) { const add = toNum(amount); h.invested = String(toNum(h.invested) + add); h.value = String(toNum(h.value) + add); } } });
+  const addToHolding = (acctId, hId, amount) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) { const add = toNum(amount); h.invested = String(round2(toNum(h.invested) + add)); h.value = String(round2(toNum(h.value) + add)); } } });
 
   const handleImport = (e) => {
     const f = e.target.files && e.target.files[0];
@@ -744,7 +750,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
         )}
 
         {page === "overview" && (
-          <OverviewPage months={state.months} cats={cats} savingsCombined={savingsCombined} rothValue={rothValue} netWorthNow={netWorthNow} activeLabel={active.label} onCapture={captureNetWorth} onOpenMonth={(k) => { setActive(k); setPage("log"); }} />
+          <OverviewPage months={state.months} cats={cats} hysaTotal={hysaTotal} investTotal={investTotal} rothValue={rothValue} netWorthNow={netWorthNow} activeLabel={active.label} onCapture={captureNetWorth} onOpenMonth={(k) => { setActive(k); setPage("log"); }} />
         )}
 
         {page === "roth" && (
@@ -1061,7 +1067,7 @@ function RothPage({ limit, contributions = [], accounts = [], onSetLimit, onAdd,
   );
 }
 
-function OverviewPage({ months, cats, savingsCombined, rothValue, netWorthNow, activeLabel, onCapture, onOpenMonth }) {
+function OverviewPage({ months, cats, hysaTotal, investTotal, rothValue, netWorthNow, activeLabel, onCapture, onOpenMonth }) {
   const keys = Object.keys(months).sort();
   const rows = keys.map((k) => {
     const m = months[k];
@@ -1088,8 +1094,10 @@ function OverviewPage({ months, cats, savingsCombined, rothValue, netWorthNow, a
   return (
     <React.Fragment>
       <div className="tiles">
-        <div className="tile brand"><div className="tlab">Savings (HYSA + invest.)</div><div className="tval num brand">{usd0(savingsCombined)}</div></div>
+        <div className="tile"><div className="tlab">HYSA &amp; cash</div><div className="tval num">{usd0(hysaTotal)}</div></div>
+        <div className="tile"><div className="tlab">Investments</div><div className="tval num">{usd0(investTotal)}</div></div>
         <div className="tile"><div className="tlab">Roth</div><div className="tval num">{usd0(rothValue)}</div></div>
+        <div className="tile brand"><div className="tlab">Net worth</div><div className="tval num brand">{usd0(netWorthNow)}</div><div className="tsub">incl. checking</div></div>
         <div className="tile"><div className="tlab">Avg spend / mo</div><div className="tval num">{usd0(avgSpend)}</div></div>
         <div className={"tile " + (avgNet >= 0 ? "pos" : "neg")}><div className="tlab">Avg cash flow / mo</div><div className={"tval num " + (avgNet >= 0 ? "pos" : "neg")}>{avgNet >= 0 ? "+" : "−"}{usd0(Math.abs(avgNet))}</div></div>
       </div>
