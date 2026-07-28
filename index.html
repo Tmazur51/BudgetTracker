@@ -217,14 +217,14 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 .led .authmsg.err { background:var(--red-tint); color:var(--red); }
 .led .authmsg.ok { background:var(--green-tint); color:var(--green); }
 
-.led .tabs { display:flex; gap:3px; background:var(--paper); border:1px solid var(--line); border-radius:11px; padding:3px; }
+.led .tabs { display:flex; gap:3px; background:var(--paper); border:1px solid var(--line); border-radius:11px; padding:3px; flex-wrap:wrap; }
 .led .tab { font-family:var(--font-d); font-weight:600; font-size:13px; border:0; background:transparent; color:var(--ink-soft); padding:8px 15px; border-radius:8px; cursor:pointer; line-height:1; transition:background .15s, color .15s; }
 .led .tab:hover { color:var(--ink); }
 .led .tab.on { background:#fff; color:var(--brand); box-shadow:0 1px 2px rgba(21,35,41,.1); }
 .led .util { display:flex; align-items:center; gap:8px; margin-left:auto; flex-wrap:wrap; }
 .led .logbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:18px; }
 
-.led .tiles { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px; }
+.led .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:16px; }
 .led .tile { background:var(--card); border:1px solid var(--line); border-radius:13px; padding:15px 16px; position:relative; overflow:hidden; }
 .led .tile::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--line-2); }
 .led .tile.brand::before { background:var(--brand); }
@@ -298,7 +298,6 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
   .led .meter { grid-template-columns:80px 1fr; }
   .led .meter .fig { grid-column:2; text-align:left; margin-top:-2px; }
   .led .settings-grid { grid-template-columns:1fr; }
-  .led .tiles { grid-template-columns:1fr 1fr; }
   .led .projfields { grid-template-columns:1fr; }
   .led .catbar { grid-template-columns:76px 1fr 68px; gap:8px; }
 }
@@ -306,7 +305,7 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V2.1</div>
+<div class="version">V2.2</div>
 <div id="root"><div class="boot">Loading Ledger…</div></div>
 
 <script>
@@ -409,14 +408,18 @@ function migrate(s) {
   if (!s.investing) s.investing = {};
   const inv = s.investing;
   if (!Array.isArray(inv.accounts)) inv.accounts = [];
-  inv.accounts = inv.accounts.map((a) => ({
-    id: a.id || uid(),
-    name: a.name || "Account",
-    type: a.type || (Array.isArray(a.holdings) && a.holdings.length ? "investment" : "cash"),
-    balance: a.balance != null ? a.balance : "",
-    apy: a.apy != null ? a.apy : "",
-    holdings: Array.isArray(a.holdings) ? a.holdings : [],
-  }));
+  inv.accounts = inv.accounts.map((a) => {
+    let type = a.type || (Array.isArray(a.holdings) && a.holdings.length ? "investment" : "cash");
+    if (type !== "cash" && /roth/i.test(a.name || "")) type = "roth";
+    return {
+      id: a.id || uid(),
+      name: a.name || "Account",
+      type,
+      balance: a.balance != null ? a.balance : "",
+      apy: a.apy != null ? a.apy : "",
+      holdings: Array.isArray(a.holdings) ? a.holdings : [],
+    };
+  });
   if (Array.isArray(inv.holdings) && inv.holdings.length) {
     inv.accounts.push({ id: uid(), name: "Investments", type: "investment", balance: "", apy: "", holdings: inv.holdings });
   }
@@ -576,8 +579,11 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const spendCats = cats.filter((c) => c !== "Savings");
   const savedThisMonth = toNum(active.toSavings);
   const totalSaved = Object.values(state.months).reduce((a, m) => a + toNum(m.toSavings), 0);
-  const cashSavings = accounts.filter((a) => a.type !== "investment").reduce((s, a) => s + toNum(a.balance), 0);
-  const investNow = accounts.filter((a) => a.type === "investment").reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + toNum(h.value), 0), 0);
+  const acctVal = (a) => a.type === "cash" ? toNum(a.balance) : (a.holdings || []).reduce((t, h) => t + toNum(h.value), 0);
+  const hysaTotal = accounts.filter((a) => a.type === "cash").reduce((s, a) => s + acctVal(a), 0);
+  const investTotal = accounts.filter((a) => a.type === "investment").reduce((s, a) => s + acctVal(a), 0);
+  const rothValue = accounts.filter((a) => a.type === "roth").reduce((s, a) => s + acctVal(a), 0);
+  const savingsCombined = hysaTotal + investTotal;
   const roth = state.roth || { limit: 7500, contributions: [] };
 
   const totalIncome = active.detailed ? sumAmt(active.income) : active.summary.income;
@@ -585,7 +591,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const cashFlow = totalIncome - totalExpense;
   const endBal = active.detailed ? (toNum(active.startingBalance) + cashFlow - savedThisMonth)
     : (active.endingBalance != null ? active.endingBalance : toNum(active.startingBalance) + cashFlow);
-  const netWorthNow = cashSavings + investNow + endBal;
+  const netWorthNow = hysaTotal + investTotal + rothValue + endBal;
 
   const actualByCat = {};
   cats.forEach((c) => (actualByCat[c] = 0));
@@ -653,7 +659,8 @@ function BudgetLedger({ mode, session, onSignOut }) {
           <nav className="tabs">
             <button className={"tab" + (page === "overview" ? " on" : "")} onClick={() => setPage("overview")}>Overview</button>
             <button className={"tab" + (page === "log" ? " on" : "")} onClick={() => setPage("log")}>Log</button>
-            <button className={"tab" + (page === "savings" ? " on" : "")} onClick={() => setPage("savings")}>Savings</button>
+            <button className={"tab" + (page === "hysa" ? " on" : "")} onClick={() => setPage("hysa")}>HYSA</button>
+            <button className={"tab" + (page === "investments" ? " on" : "")} onClick={() => setPage("investments")}>Investments</button>
             <button className={"tab" + (page === "roth" ? " on" : "")} onClick={() => setPage("roth")}>Roth</button>
           </nav>
           <div className="util">
@@ -737,15 +744,23 @@ function BudgetLedger({ mode, session, onSignOut }) {
         )}
 
         {page === "overview" && (
-          <OverviewPage months={state.months} cats={cats} cashSavings={cashSavings} investNow={investNow} netWorthNow={netWorthNow} activeLabel={active.label} onCapture={captureNetWorth} onOpenMonth={(k) => { setActive(k); setPage("log"); }} />
+          <OverviewPage months={state.months} cats={cats} savingsCombined={savingsCombined} rothValue={rothValue} netWorthNow={netWorthNow} activeLabel={active.label} onCapture={captureNetWorth} onOpenMonth={(k) => { setActive(k); setPage("log"); }} />
         )}
 
         {page === "roth" && (
           <RothPage limit={roth.limit} contributions={roth.contributions || []} onSetLimit={setRothLimit} onAdd={addRothContribution} onDel={delRothContribution} />
         )}
 
-        {page === "savings" && (
-          <SavingsPage accounts={accounts} checking={endBal} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddToHolding={addToHolding} />
+        {page === "hysa" && (
+          <HysaPage accounts={accounts} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddToHolding={addToHolding} />
+        )}
+
+        {page === "investments" && (
+          <InvestmentsPage accounts={accounts} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddToHolding={addToHolding} />
+        )}
+
+        {page === "roth" && (
+          <RothPage limit={roth.limit} contributions={roth.contributions || []} accounts={accounts} onSetLimit={setRothLimit} onAdd={addRothContribution} onDel={delRothContribution} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddToHolding={addToHolding} />
         )}
       </div>
 
@@ -971,7 +986,7 @@ function NetWorthChart({ points }) {
   );
 }
 
-function RothPage({ limit, contributions, onSetLimit, onAdd, onDel }) {
+function RothPage({ limit, contributions, accounts, onSetLimit, onAdd, onDel, onAddAccount, onEditAccount, onDelAccount, onAddHolding, onEditHolding, onDelHolding, onAddToHolding }) {
   const now = new Date();
   const year = now.getFullYear();
   const lim = toNum(limit) || 0;
@@ -986,6 +1001,8 @@ function RothPage({ limit, contributions, onSetLimit, onAdd, onDel }) {
   const [date, setDate] = useState(today);
   const add = () => { if (!amt) return; onAdd(amt, date || today); setAmt(""); setDate(today); };
   const sorted = contributions.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const rothList = accounts.filter((a) => a.type === "roth");
+  const rothValue = rothList.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + toNum(h.value), 0), 0);
 
   return (
     <React.Fragment>
@@ -993,6 +1010,7 @@ function RothPage({ limit, contributions, onSetLimit, onAdd, onDel }) {
         <div className="tile brand"><div className="tlab">Contributed ({year})</div><div className="tval num brand">{usd0(contributedYear)}</div></div>
         <div className="tile"><div className="tlab">Remaining</div><div className="tval num">{usd0(remaining)}</div></div>
         <div className="tile pos"><div className="tlab">Invest / month</div><div className="tval num pos">{maxed ? "—" : usd0(perMonth)}</div><div className="tsub">{maxed ? "limit reached" : "for the rest of " + year}</div></div>
+        <div className="tile"><div className="tlab">Roth value now</div><div className="tval num">{usd0(rothValue)}</div></div>
       </div>
 
       <div className="panel">
@@ -1012,6 +1030,11 @@ function RothPage({ limit, contributions, onSetLimit, onAdd, onDel }) {
           <input className="num" inputMode="decimal" value={limit} onChange={(e) => onSetLimit(e.target.value)} />
           <span className="note">2026 IRS limit is $7,500 (under 50; $8,600 if 50+)</span>
         </div>
+      </div>
+
+      <div className="panel">
+        <div className="phead"><div className="t">Roth holdings</div><div className="hint">the stocks &amp; funds inside your Roth and what they're worth</div></div>
+        <AccountList list={rothList} defaultType="roth" addPlaceholder="Roth account (e.g. Fidelity Roth)" emptyText="No Roth account yet — add it below, then add the holdings inside it." onAddAccount={onAddAccount} onEditAccount={onEditAccount} onDelAccount={onDelAccount} onAddHolding={onAddHolding} onEditHolding={onEditHolding} onDelHolding={onDelHolding} onAddToHolding={onAddToHolding} />
       </div>
 
       <div className="panel">
@@ -1042,7 +1065,7 @@ function RothPage({ limit, contributions, onSetLimit, onAdd, onDel }) {
   );
 }
 
-function OverviewPage({ months, cats, cashSavings, investNow, netWorthNow, activeLabel, onCapture, onOpenMonth }) {
+function OverviewPage({ months, cats, savingsCombined, rothValue, netWorthNow, activeLabel, onCapture, onOpenMonth }) {
   const keys = Object.keys(months).sort();
   const rows = keys.map((k) => {
     const m = months[k];
@@ -1069,8 +1092,8 @@ function OverviewPage({ months, cats, cashSavings, investNow, netWorthNow, activ
   return (
     <React.Fragment>
       <div className="tiles">
-        <div className="tile brand"><div className="tlab">Savings (cash &amp; HYSA)</div><div className="tval num brand">{usd0(cashSavings)}</div></div>
-        <div className="tile"><div className="tlab">Investments now</div><div className="tval num">{usd0(investNow)}</div></div>
+        <div className="tile brand"><div className="tlab">Savings (HYSA + invest.)</div><div className="tval num brand">{usd0(savingsCombined)}</div></div>
+        <div className="tile"><div className="tlab">Roth</div><div className="tval num">{usd0(rothValue)}</div></div>
         <div className="tile"><div className="tlab">Avg spend / mo</div><div className="tval num">{usd0(avgSpend)}</div></div>
         <div className={"tile " + (avgNet >= 0 ? "pos" : "neg")}><div className="tlab">Avg cash flow / mo</div><div className={"tval num " + (avgNet >= 0 ? "pos" : "neg")}>{avgNet >= 0 ? "+" : "−"}{usd0(Math.abs(avgNet))}</div></div>
       </div>
@@ -1119,7 +1142,7 @@ function OverviewPage({ months, cats, cashSavings, investNow, netWorthNow, activ
 }
 
 function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDelHolding, onAddToHolding }) {
-  const isInv = account.type === "investment";
+  const isInv = account.type !== "cash";
   const holds = account.holdings || [];
   const invested = holds.reduce((a, h) => a + toNum(h.invested), 0);
   const value = isInv ? holds.reduce((a, h) => a + toNum(h.value), 0) : toNum(account.balance);
@@ -1140,6 +1163,7 @@ function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDe
         <select className="acctType" value={account.type} onChange={(e) => onEdit(account.id, "type", e.target.value)}>
           <option value="cash">Cash / HYSA</option>
           <option value="investment">Investments</option>
+          <option value="roth">Roth</option>
         </select>
         <div className="acctVal num">{usd(value)}</div>
         <button className="del" onClick={() => onDel(account.id)} aria-label="Delete account">×</button>
@@ -1205,63 +1229,76 @@ function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDe
   );
 }
 
-function SavingsPage({ accounts, checking, onAddAccount, onEditAccount, onDelAccount, onAddHolding, onEditHolding, onDelHolding, onAddToHolding }) {
-  const acctValue = (a) => a.type === "investment" ? (a.holdings || []).reduce((s, h) => s + toNum(h.value), 0) : toNum(a.balance);
-  const acctInvested = (a) => a.type === "investment" ? (a.holdings || []).reduce((s, h) => s + toNum(h.invested), 0) : 0;
-  const portfolio = accounts.reduce((s, a) => s + acctValue(a), 0);
-  const invested = accounts.reduce((s, a) => s + acctInvested(a), 0);
-  const investValue = accounts.filter((a) => a.type === "investment").reduce((s, a) => s + acctValue(a), 0);
-  const gain = investValue - invested;
-  const gainPct = invested > 0 ? gain / invested * 100 : 0;
-  const netWorth = portfolio + toNum(checking);
-
+function AccountList({ list, defaultType, addPlaceholder, emptyText, onAddAccount, onEditAccount, onDelAccount, onAddHolding, onEditHolding, onDelHolding, onAddToHolding }) {
   const [aName, setAName] = useState("");
-  const [aType, setAType] = useState("cash");
-  const addAcct = () => { if (!aName.trim()) return; onAddAccount(aName.trim(), aType); setAName(""); };
+  const add = () => { if (!aName.trim()) return; onAddAccount(aName.trim(), defaultType); setAName(""); };
+  return (
+    <React.Fragment>
+      {list.length === 0 ? (
+        <div className="empty">{emptyText}</div>
+      ) : (
+        list.map((a) => (
+          <AccountCard key={a.id} account={a} onEdit={onEditAccount} onDel={onDelAccount} onAddHolding={onAddHolding} onEditHolding={onEditHolding} onDelHolding={onDelHolding} onAddToHolding={onAddToHolding} />
+        ))
+      )}
+      <div className="addacct">
+        <input placeholder={addPlaceholder} value={aName} onChange={(e) => setAName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
+        <button className="btn primary small" onClick={add}>Add account</button>
+      </div>
+    </React.Fragment>
+  );
+}
 
+function HysaPage(props) {
+  const list = props.accounts.filter((a) => a.type === "cash");
+  const total = list.reduce((s, a) => s + toNum(a.balance), 0);
+  const interest = list.reduce((s, a) => s + toNum(a.balance) * toNum(a.apy) / 100, 0);
+  return (
+    <React.Fragment>
+      <div className="tiles">
+        <div className="tile brand"><div className="tlab">HYSA &amp; cash</div><div className="tval num brand">{usd(total)}</div></div>
+        <div className="tile"><div className="tlab">Est. interest / yr</div><div className="tval num">{usd0(interest)}</div><div className="tsub">at current balances &amp; APYs</div></div>
+      </div>
+      <div className="panel">
+        <div className="phead"><div className="t">Cash &amp; savings accounts</div><div className="hint">balances and APY — update to match your statements</div></div>
+        <AccountList list={list} defaultType="cash" addPlaceholder="Account (e.g. Wealthfront HYSA)" emptyText="No cash accounts yet — add your Wealthfront HYSA or any savings account below." {...props} />
+      </div>
+    </React.Fragment>
+  );
+}
+
+function InvestmentsPage(props) {
+  const list = props.accounts.filter((a) => a.type === "investment");
+  const invested = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + toNum(h.invested), 0), 0);
+  const value = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + toNum(h.value), 0), 0);
+  const gain = value - invested;
+  const gainPct = invested > 0 ? gain / invested * 100 : 0;
   const [contrib, setContrib] = useState("500");
-  const [rate, setRate] = useState("5");
+  const [rate, setRate] = useState("7");
   const [years, setYears] = useState("10");
   const r = toNum(rate) / 100 / 12;
   const nMonths = Math.max(0, toNum(years) * 12);
   const pmt = toNum(contrib);
-  const fv = r > 0 ? portfolio * Math.pow(1 + r, nMonths) + pmt * ((Math.pow(1 + r, nMonths) - 1) / r) : portfolio + pmt * nMonths;
-
+  const fv = r > 0 ? value * Math.pow(1 + r, nMonths) + pmt * ((Math.pow(1 + r, nMonths) - 1) / r) : value + pmt * nMonths;
   return (
     <React.Fragment>
       <div className="tiles">
-        <div className="tile brand"><div className="tlab">Savings &amp; investments</div><div className="tval num brand">{usd(portfolio)}</div></div>
+        <div className="tile brand"><div className="tlab">Value now</div><div className="tval num brand">{usd(value)}</div></div>
+        <div className="tile"><div className="tlab">Invested</div><div className="tval num">{usd(invested)}</div></div>
         <div className={"tile " + (gain >= 0 ? "pos" : "neg")}>
-          <div className="tlab">Investment gain / loss</div>
+          <div className="tlab">Gain / loss</div>
           <div className={"tval num " + (gain >= 0 ? "pos" : "neg")}>{gain >= 0 ? "+" : "−"}{usd0(Math.abs(gain))}</div>
           <div className="tsub">{invested > 0 ? (gain >= 0 ? "+" : "−") + Math.abs(gainPct).toFixed(1) + "% on what you invested" : "add holdings to track"}</div>
         </div>
-        <div className="tile pos"><div className="tlab">Net worth</div><div className="tval num pos">{usd(netWorth)}</div><div className="tsub">accounts + checking</div></div>
       </div>
-
       <div className="panel">
-        <div className="phead"><div className="t">Your accounts</div><div className="hint">cash accounts track a balance &amp; APY; investment accounts hold your stocks</div></div>
-        {accounts.length === 0 ? (
-          <div className="empty">No accounts yet — add your Wealthfront HYSA, Fidelity Roth, Fidelity Individual, and so on below.</div>
-        ) : (
-          accounts.map((a) => (
-            <AccountCard key={a.id} account={a} onEdit={onEditAccount} onDel={onDelAccount} onAddHolding={onAddHolding} onEditHolding={onEditHolding} onDelHolding={onDelHolding} onAddToHolding={onAddToHolding} />
-          ))
-        )}
-        <div className="addacct">
-          <input placeholder="Account name (e.g. Fidelity Roth)" value={aName} onChange={(e) => setAName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addAcct()} />
-          <select value={aType} onChange={(e) => setAType(e.target.value)}>
-            <option value="cash">Cash / HYSA</option>
-            <option value="investment">Investments</option>
-          </select>
-          <button className="btn primary small" onClick={addAcct}>Add account</button>
-        </div>
+        <div className="phead"><div className="t">Investment accounts</div><div className="hint">e.g. your Fidelity Individual — each holds its stocks &amp; funds</div></div>
+        <AccountList list={list} defaultType="investment" addPlaceholder="Account (e.g. Fidelity Individual)" emptyText="No investment accounts yet — add your taxable/individual brokerage below, then add the holdings inside it." {...props} />
       </div>
-
       <div className="panel">
         <div className="phead"><div className="t">Projection</div><div className="hint">a rough what-if, compounded monthly</div></div>
         <div className="projgrid">
-          <div className="plead">Starting from your current total of <span className="num">{usd0(portfolio)}</span>:</div>
+          <div className="plead">Starting from your current value of <span className="num">{usd0(value)}</span>:</div>
           <div className="projfields">
             <div className="pf"><span>Add / month</span><input inputMode="decimal" value={contrib} onChange={(e) => setContrib(e.target.value)} /></div>
             <div className="pf"><span>Return %/yr</span><input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /></div>
