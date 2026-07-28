@@ -305,7 +305,7 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V2.2</div>
+<div class="version">V2.3</div>
 <div id="root"><div class="boot">Loading Ledger…</div></div>
 
 <script>
@@ -748,7 +748,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
         )}
 
         {page === "roth" && (
-          <RothPage limit={roth.limit} contributions={roth.contributions || []} onSetLimit={setRothLimit} onAdd={addRothContribution} onDel={delRothContribution} />
+          <RothPage limit={roth.limit} contributions={roth.contributions || []} accounts={accounts} onSetLimit={setRothLimit} onAdd={addRothContribution} onDel={delRothContribution} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddToHolding={addToHolding} />
         )}
 
         {page === "hysa" && (
@@ -757,10 +757,6 @@ function BudgetLedger({ mode, session, onSignOut }) {
 
         {page === "investments" && (
           <InvestmentsPage accounts={accounts} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddToHolding={addToHolding} />
-        )}
-
-        {page === "roth" && (
-          <RothPage limit={roth.limit} contributions={roth.contributions || []} accounts={accounts} onSetLimit={setRothLimit} onAdd={addRothContribution} onDel={delRothContribution} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddToHolding={addToHolding} />
         )}
       </div>
 
@@ -986,7 +982,7 @@ function NetWorthChart({ points }) {
   );
 }
 
-function RothPage({ limit, contributions, accounts, onSetLimit, onAdd, onDel, onAddAccount, onEditAccount, onDelAccount, onAddHolding, onEditHolding, onDelHolding, onAddToHolding }) {
+function RothPage({ limit, contributions = [], accounts = [], onSetLimit, onAdd, onDel, onAddAccount, onEditAccount, onDelAccount, onAddHolding, onEditHolding, onDelHolding, onAddToHolding }) {
   const now = new Date();
   const year = now.getFullYear();
   const lim = toNum(limit) || 0;
@@ -1250,7 +1246,7 @@ function AccountList({ list, defaultType, addPlaceholder, emptyText, onAddAccoun
 }
 
 function HysaPage(props) {
-  const list = props.accounts.filter((a) => a.type === "cash");
+  const list = (props.accounts || []).filter((a) => a.type === "cash");
   const total = list.reduce((s, a) => s + toNum(a.balance), 0);
   const interest = list.reduce((s, a) => s + toNum(a.balance) * toNum(a.apy) / 100, 0);
   return (
@@ -1268,7 +1264,7 @@ function HysaPage(props) {
 }
 
 function InvestmentsPage(props) {
-  const list = props.accounts.filter((a) => a.type === "investment");
+  const list = (props.accounts || []).filter((a) => a.type === "investment");
   const invested = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + toNum(h.invested), 0), 0);
   const value = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + toNum(h.value), 0), 0);
   const gain = value - invested;
