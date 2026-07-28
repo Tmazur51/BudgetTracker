@@ -282,6 +282,15 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 .led .addto input { border:1px solid var(--line-2); border-radius:8px; padding:7px 9px; font-family:var(--font-m); font-size:13px; background:#fff; color:var(--ink); width:150px; }
 .led .addto input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
 
+.led .rothbar { height:22px; background:var(--paper); border:1px solid var(--line-2); border-radius:11px; overflow:hidden; }
+.led .rothfill { height:100%; background:var(--brand); border-radius:10px 0 0 10px; min-width:2px; }
+.led .rothrow { display:flex; justify-content:space-between; align-items:baseline; margin-top:8px; font-family:var(--font-m); font-size:13px; font-weight:600; color:var(--ink-soft); }
+.led .rothlimit { display:flex; align-items:center; gap:10px; margin-top:16px; padding-top:14px; border-top:1px dashed var(--line); flex-wrap:wrap; }
+.led .rothlimit .lbl { font-family:var(--font-d); text-transform:uppercase; letter-spacing:.08em; font-size:10.5px; font-weight:600; color:var(--muted); }
+.led .rothlimit input { width:120px; border:1px solid var(--line-2); border-radius:8px; padding:8px 10px; font-family:var(--font-m); font-size:13.5px; background:#fff; color:var(--ink); }
+.led .rothlimit input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
+.led .rothlimit .note { font-size:11px; color:var(--faint); }
+
 @media (max-width:720px){
   .led .stats { grid-template-columns:1fr 1fr; }
   .led .cols { grid-template-columns:1fr; }
@@ -297,7 +306,7 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V2.0</div>
+<div class="version">V2.1</div>
 <div id="root"><div class="boot">Loading Ledger…</div></div>
 
 <script>
@@ -420,6 +429,9 @@ function migrate(s) {
     });
   }
   delete inv.contributions;
+  if (!s.roth || typeof s.roth !== "object") s.roth = { limit: 7500, contributions: [] };
+  if (s.roth.limit == null) s.roth.limit = 7500;
+  if (!Array.isArray(s.roth.contributions)) s.roth.contributions = [];
   return s;
 }
 
@@ -429,7 +441,7 @@ function seedState() {
   const months = {
     "2026-05": { label: "May 2026", detailed: true, startingBalance: 0, income: [], expenses: [] },
   };
-  return { version: 1, settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045 }, months, activeMonth: "2026-05", investing: { accounts: [] } };
+  return { version: 1, settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045 }, months, activeMonth: "2026-05", investing: { accounts: [] }, roth: { limit: 7500, contributions: [] } };
 }
 
 /* ============================ auth (cloud mode) ============================ */
@@ -566,12 +578,14 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const totalSaved = Object.values(state.months).reduce((a, m) => a + toNum(m.toSavings), 0);
   const cashSavings = accounts.filter((a) => a.type !== "investment").reduce((s, a) => s + toNum(a.balance), 0);
   const investNow = accounts.filter((a) => a.type === "investment").reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + toNum(h.value), 0), 0);
+  const roth = state.roth || { limit: 7500, contributions: [] };
 
   const totalIncome = active.detailed ? sumAmt(active.income) : active.summary.income;
   const totalExpense = active.detailed ? sumAmt(active.expenses) : active.summary.expense;
   const cashFlow = totalIncome - totalExpense;
   const endBal = active.detailed ? (toNum(active.startingBalance) + cashFlow - savedThisMonth)
     : (active.endingBalance != null ? active.endingBalance : toNum(active.startingBalance) + cashFlow);
+  const netWorthNow = cashSavings + investNow + endBal;
 
   const actualByCat = {};
   cats.forEach((c) => (actualByCat[c] = 0));
@@ -608,6 +622,10 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const editAccount = (id, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === id); if (a) a[field] = value; });
   const delAccount = (id) => mutate((s) => { s.investing.accounts = s.investing.accounts.filter((x) => x.id !== id); });
   const setToSavings = (v) => mutate((s) => { s.months[s.activeMonth].toSavings = v; });
+  const captureNetWorth = () => mutate((s) => { s.months[s.activeMonth].netWorth = Math.round(netWorthNow * 100) / 100; });
+  const setRothLimit = (v) => mutate((s) => { if (!s.roth) s.roth = { limit: 7500, contributions: [] }; s.roth.limit = v; });
+  const addRothContribution = (amount, date) => mutate((s) => { if (!s.roth) s.roth = { limit: 7500, contributions: [] }; if (!s.roth.contributions) s.roth.contributions = []; s.roth.contributions.push({ id: uid(), amount, date }); });
+  const delRothContribution = (id) => mutate((s) => { if (!s.roth || !s.roth.contributions) return; s.roth.contributions = s.roth.contributions.filter((c) => c.id !== id); });
   const addHolding = (acctId, name, invested, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a) { if (!a.holdings) a.holdings = []; a.holdings.push({ id: uid(), name, invested, value }); } });
   const editHolding = (acctId, hId, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) h[field] = value; } });
   const delHolding = (acctId, hId) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) a.holdings = a.holdings.filter((y) => y.id !== hId); });
@@ -636,6 +654,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
             <button className={"tab" + (page === "overview" ? " on" : "")} onClick={() => setPage("overview")}>Overview</button>
             <button className={"tab" + (page === "log" ? " on" : "")} onClick={() => setPage("log")}>Log</button>
             <button className={"tab" + (page === "savings" ? " on" : "")} onClick={() => setPage("savings")}>Savings</button>
+            <button className={"tab" + (page === "roth" ? " on" : "")} onClick={() => setPage("roth")}>Roth</button>
           </nav>
           <div className="util">
             <button className="btn ghost small" onClick={() => exportData(state)}>Backup</button>
@@ -718,7 +737,11 @@ function BudgetLedger({ mode, session, onSignOut }) {
         )}
 
         {page === "overview" && (
-          <OverviewPage months={state.months} cats={cats} cashSavings={cashSavings} investNow={investNow} onOpenMonth={(k) => { setActive(k); setPage("log"); }} />
+          <OverviewPage months={state.months} cats={cats} cashSavings={cashSavings} investNow={investNow} netWorthNow={netWorthNow} activeLabel={active.label} onCapture={captureNetWorth} onOpenMonth={(k) => { setActive(k); setPage("log"); }} />
+        )}
+
+        {page === "roth" && (
+          <RothPage limit={roth.limit} contributions={roth.contributions || []} onSetLimit={setRothLimit} onAdd={addRothContribution} onDel={delRothContribution} />
         )}
 
         {page === "savings" && (
@@ -917,7 +940,109 @@ function CashFlowChart({ rows, onPick }) {
   );
 }
 
-function OverviewPage({ months, cats, cashSavings, investNow, onOpenMonth }) {
+function NetWorthChart({ points }) {
+  if (points.length === 0) return <div className="empty">No snapshots yet — tap "Capture" above for a month and your net worth line starts here.</div>;
+  const W = 1000, H = 220, padL = 54, padR = 16, padT = 16, padB = 30;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const vals = points.map((p) => p.nw);
+  let max = Math.max(...vals), min = Math.min(...vals);
+  if (max === min) { const pad = Math.abs(max || 1) * 0.1 + 1; max += pad; min -= pad; }
+  const span = max - min;
+  const xAt = (i) => points.length === 1 ? padL + plotW / 2 : padL + plotW * i / (points.length - 1);
+  const yAt = (v) => padT + plotH - ((v - min) / span) * plotH;
+  const line = points.map((p, i) => (i === 0 ? "M" : "L") + xAt(i).toFixed(1) + " " + yAt(p.nw).toFixed(1)).join(" ");
+  const area = points.length > 1 ? line + " L " + xAt(points.length - 1).toFixed(1) + " " + (padT + plotH) + " L " + xAt(0).toFixed(1) + " " + (padT + plotH) + " Z" : "";
+  return (
+    <div className="chartwrap">
+      <svg viewBox={"0 0 " + W + " " + H} width="100%" preserveAspectRatio="xMidYMid meet" style={{ display: "block" }}>
+        <text x={padL - 8} y={padT + 4} textAnchor="end" fontSize="10" fill="#a7b3b7" fontFamily="'JetBrains Mono', monospace">{usd0(max)}</text>
+        <text x={padL - 8} y={padT + plotH + 4} textAnchor="end" fontSize="10" fill="#a7b3b7" fontFamily="'JetBrains Mono', monospace">{usd0(min)}</text>
+        <line x1={padL} y1={padT + plotH} x2={W - padR} y2={padT + plotH} stroke="#e6ecec" strokeWidth="1" />
+        {area && <path d={area} fill="#e2eef2" />}
+        <path d={line} fill="none" stroke="#0e5b71" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        {points.map((p, i) => (
+          <g key={p.k}>
+            <circle cx={xAt(i)} cy={yAt(p.nw)} r="3.5" fill="#0e5b71" />
+            <text x={xAt(i)} y={H - 10} textAnchor="middle" fontSize="10.5" fill="#79888e" fontFamily="'Space Grotesk', sans-serif" fontWeight="500">{p.label.split(" ")[0].slice(0, 3)}</text>
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function RothPage({ limit, contributions, onSetLimit, onAdd, onDel }) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const lim = toNum(limit) || 0;
+  const contributedYear = contributions.filter((c) => String(c.date || "").slice(0, 4) === String(year)).reduce((a, c) => a + toNum(c.amount), 0);
+  const remaining = Math.max(0, lim - contributedYear);
+  const monthsLeft = 12 - now.getMonth();
+  const perMonth = monthsLeft > 0 ? remaining / monthsLeft : remaining;
+  const pct = lim > 0 ? Math.min(100, contributedYear / lim * 100) : 0;
+  const maxed = lim > 0 && remaining <= 0.005;
+  const today = new Date().toISOString().slice(0, 10);
+  const [amt, setAmt] = useState("");
+  const [date, setDate] = useState(today);
+  const add = () => { if (!amt) return; onAdd(amt, date || today); setAmt(""); setDate(today); };
+  const sorted = contributions.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+  return (
+    <React.Fragment>
+      <div className="tiles">
+        <div className="tile brand"><div className="tlab">Contributed ({year})</div><div className="tval num brand">{usd0(contributedYear)}</div></div>
+        <div className="tile"><div className="tlab">Remaining</div><div className="tval num">{usd0(remaining)}</div></div>
+        <div className="tile pos"><div className="tlab">Invest / month</div><div className="tval num pos">{maxed ? "—" : usd0(perMonth)}</div><div className="tsub">{maxed ? "limit reached" : "for the rest of " + year}</div></div>
+      </div>
+
+      <div className="panel">
+        <div className="phead"><div className="t">Progress to your limit</div><div className="hint">Roth IRA · tax year {year}</div></div>
+        <div className="rothbar"><div className="rothfill" style={{ width: pct + "%" }} /></div>
+        <div className="rothrow">
+          <span>{usd(contributedYear)} of {usd(lim)}</span>
+          <span style={{ color: maxed ? "var(--green)" : "var(--muted)" }}>{pct.toFixed(0)}%</span>
+        </div>
+        <div className="splitnote" style={{ marginTop: 12 }}>
+          {maxed
+            ? <React.Fragment>You've maxed your Roth for {year} — nicely done.</React.Fragment>
+            : <React.Fragment>To reach your <b>{usd0(lim)}</b> limit by year-end, put in about <b>{usd0(perMonth)}</b>/month for the remaining {monthsLeft} month{monthsLeft === 1 ? "" : "s"}. An even split across the whole year is <b>{usd0(lim / 12)}</b>/month. You technically have until tax day next April to finish {year}'s contributions.</React.Fragment>}
+        </div>
+        <div className="rothlimit">
+          <span className="lbl">Annual limit</span>
+          <input className="num" inputMode="decimal" value={limit} onChange={(e) => onSetLimit(e.target.value)} />
+          <span className="note">2026 IRS limit is $7,500 (under 50; $8,600 if 50+)</span>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="phead"><div className="t">Contributions this year</div><div className="hint">log each Roth deposit to track against the max</div></div>
+        {sorted.length === 0 ? (
+          <div className="empty">No contributions logged yet. Add each Roth deposit below and it counts toward your {year} limit.</div>
+        ) : (
+          <table className="ledgerT">
+            <thead><tr><th>Date</th><th className="r">Amount</th><th style={{ width: 34 }}></th></tr></thead>
+            <tbody>
+              {sorted.map((c) => (
+                <tr key={c.id}>
+                  <td><span className="num" style={{ fontSize: "12.5px" }}>{fmtDate(c.date)}{String(c.date || "").slice(0, 4) !== String(year) ? " (" + String(c.date || "").slice(0, 4) + ")" : ""}</span></td>
+                  <td className="r"><span className="num" style={{ fontWeight: 600 }}>{usd(toNum(c.amount))}</span></td>
+                  <td><button className="del" onClick={() => onDel(c.id)} aria-label="Delete">×</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div className="addrow">
+          <input className="fname" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <input className="famt" placeholder="Amount" inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
+          <button className="btn primary small" onClick={add}>Add</button>
+        </div>
+      </div>
+    </React.Fragment>
+  );
+}
+
+function OverviewPage({ months, cats, cashSavings, investNow, netWorthNow, activeLabel, onCapture, onOpenMonth }) {
   const keys = Object.keys(months).sort();
   const rows = keys.map((k) => {
     const m = months[k];
@@ -939,6 +1064,7 @@ function OverviewPage({ months, cats, cashSavings, investNow, onOpenMonth }) {
   });
   const catList = cats.filter((c) => c !== "Savings").map((c) => ({ c, v: catTotals[c] || 0 })).sort((a, b) => b.v - a.v);
   const catMax = Math.max(1, ...catList.map((x) => x.v));
+  const nwPoints = keys.filter((k) => months[k].netWorth != null && months[k].netWorth !== "").map((k) => ({ k, label: months[k].label, nw: toNum(months[k].netWorth) }));
 
   return (
     <React.Fragment>
@@ -947,6 +1073,15 @@ function OverviewPage({ months, cats, cashSavings, investNow, onOpenMonth }) {
         <div className="tile"><div className="tlab">Investments now</div><div className="tval num">{usd0(investNow)}</div></div>
         <div className="tile"><div className="tlab">Avg spend / mo</div><div className="tval num">{usd0(avgSpend)}</div></div>
         <div className={"tile " + (avgNet >= 0 ? "pos" : "neg")}><div className="tlab">Avg cash flow / mo</div><div className={"tval num " + (avgNet >= 0 ? "pos" : "neg")}>{avgNet >= 0 ? "+" : "−"}{usd0(Math.abs(avgNet))}</div></div>
+      </div>
+
+      <div className="panel">
+        <div className="phead">
+          <div className="t">Net worth over time</div>
+          <button className="btn ghost small" onClick={onCapture}>Capture {activeLabel} · {usd0(netWorthNow)}</button>
+        </div>
+        <NetWorthChart points={nwPoints} />
+        <div className="hint" style={{ marginTop: 10 }}>Tap capture each month to snapshot your net worth (accounts + checking) and watch the line grow.</div>
       </div>
 
       <div className="panel">
