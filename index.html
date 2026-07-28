@@ -297,7 +297,7 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V1.9</div>
+<div class="version">V2.0</div>
 <div id="root"><div class="boot">Loading Ledger…</div></div>
 
 <script>
@@ -564,6 +564,8 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const spendCats = cats.filter((c) => c !== "Savings");
   const savedThisMonth = toNum(active.toSavings);
   const totalSaved = Object.values(state.months).reduce((a, m) => a + toNum(m.toSavings), 0);
+  const cashSavings = accounts.filter((a) => a.type !== "investment").reduce((s, a) => s + toNum(a.balance), 0);
+  const investNow = accounts.filter((a) => a.type === "investment").reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + toNum(h.value), 0), 0);
 
   const totalIncome = active.detailed ? sumAmt(active.income) : active.summary.income;
   const totalExpense = active.detailed ? sumAmt(active.expenses) : active.summary.expense;
@@ -716,7 +718,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
         )}
 
         {page === "overview" && (
-          <OverviewPage months={state.months} cats={cats} totalSaved={totalSaved} onOpenMonth={(k) => { setActive(k); setPage("log"); }} />
+          <OverviewPage months={state.months} cats={cats} cashSavings={cashSavings} investNow={investNow} onOpenMonth={(k) => { setActive(k); setPage("log"); }} />
         )}
 
         {page === "savings" && (
@@ -915,7 +917,7 @@ function CashFlowChart({ rows, onPick }) {
   );
 }
 
-function OverviewPage({ months, cats, totalSaved, onOpenMonth }) {
+function OverviewPage({ months, cats, cashSavings, investNow, onOpenMonth }) {
   const keys = Object.keys(months).sort();
   const rows = keys.map((k) => {
     const m = months[k];
@@ -941,10 +943,10 @@ function OverviewPage({ months, cats, totalSaved, onOpenMonth }) {
   return (
     <React.Fragment>
       <div className="tiles">
-        <div className="tile"><div className="tlab">Months tracked</div><div className="tval num">{rows.length}</div></div>
+        <div className="tile brand"><div className="tlab">Savings (cash &amp; HYSA)</div><div className="tval num brand">{usd0(cashSavings)}</div></div>
+        <div className="tile"><div className="tlab">Investments now</div><div className="tval num">{usd0(investNow)}</div></div>
         <div className="tile"><div className="tlab">Avg spend / mo</div><div className="tval num">{usd0(avgSpend)}</div></div>
         <div className={"tile " + (avgNet >= 0 ? "pos" : "neg")}><div className="tlab">Avg cash flow / mo</div><div className={"tval num " + (avgNet >= 0 ? "pos" : "neg")}>{avgNet >= 0 ? "+" : "−"}{usd0(Math.abs(avgNet))}</div></div>
-        <div className="tile brand"><div className="tlab">Total saved</div><div className="tval num brand">{usd0(totalSaved)}</div></div>
       </div>
 
       <div className="panel">
