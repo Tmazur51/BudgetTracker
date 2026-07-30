@@ -340,7 +340,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V3.4</div>
+<div class="version">V3.6</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -447,6 +447,7 @@ function migrate(s) {
   if (!s.investing) s.investing = {};
   const inv = s.investing;
   if (!Array.isArray(inv.accounts)) inv.accounts = [];
+  if (!Array.isArray(inv.history)) inv.history = [];
   inv.accounts = inv.accounts.map((a) => {
     let type = a.type || (Array.isArray(a.holdings) && a.holdings.length ? "investment" : "cash");
     if (type !== "cash" && /roth/i.test(a.name || "")) type = "roth";
@@ -498,7 +499,7 @@ function seedState() {
   const months = {
     "2026-05": { label: "May 2026", detailed: true, startingBalance: 0, income: [], expenses: [] },
   };
-  return { version: 1, settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045, finnhubKey: "" }, months, activeMonth: "2026-05", investing: { accounts: [] }, roth: { limit: 7500, contributions: [] } };
+  return { version: 1, settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045, finnhubKey: "" }, months, activeMonth: "2026-05", investing: { accounts: [], history: [] }, roth: { limit: 7500, contributions: [] } };
 }
 
 /* ============================ auth (cloud mode) ============================ */
@@ -585,6 +586,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const saveTimer = useRef(null);
   const skipSave = useRef(false);
   const doRefreshRef = useRef(null);
+  const recordHistoryRef = useRef(null);
   const autoRan = useRef(false);
   const userId = session ? session.user.id : null;
 
@@ -628,12 +630,14 @@ function BudgetLedger({ mode, session, onSignOut }) {
     return () => { supabaseClient.removeChannel(ch); };
   }, [mode, userId]);
 
-  // auto-refresh stock prices once per open, if a key is set
+  // on open: refresh prices (if a key is set), then record today's investment value
   useEffect(() => {
     if (!state || autoRan.current) return;
-    if (!state.settings || !(state.settings.finnhubKey || "").trim()) return;
     autoRan.current = true;
-    if (doRefreshRef.current) doRefreshRef.current();
+    const key = state.settings && (state.settings.finnhubKey || "").trim();
+    const done = () => { if (recordHistoryRef.current) recordHistoryRef.current(); };
+    if (key && doRefreshRef.current) { Promise.resolve(doRefreshRef.current()).then(done).catch(done); }
+    else { done(); }
   }, [state]);
 
   if (!state) return (<div className="led"><div className="loading">Loading your budget…</div></div>);
@@ -696,7 +700,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const editAccount = (id, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === id); if (a) a[field] = value; });
   const delAccount = (id) => mutate((s) => { s.investing.accounts = s.investing.accounts.filter((x) => x.id !== id); });
   const setToSavings = (v) => mutate((s) => { s.months[s.activeMonth].toSavings = v; });
-  const captureNetWorth = () => mutate((s) => { s.months[s.activeMonth].netWorth = Math.round(netWorthNow * 100) / 100; });
+  const captureNetWorth = () => mutate((s) => { const m = s.months[s.activeMonth]; m.netWorth = Math.round(netWorthNow * 100) / 100; m.investValue = Math.round(investTotal * 100) / 100; });
   const setRothLimit = (v) => mutate((s) => { if (!s.roth) s.roth = { limit: 7500, contributions: [] }; s.roth.limit = v; });
   const addRothContribution = (amount, date) => mutate((s) => { if (!s.roth) s.roth = { limit: 7500, contributions: [] }; if (!s.roth.contributions) s.roth.contributions = []; s.roth.contributions.push({ id: uid(), amount, date }); });
   const delRothContribution = (id) => mutate((s) => { if (!s.roth || !s.roth.contributions) return; s.roth.contributions = s.roth.contributions.filter((c) => c.id !== id); });
@@ -727,6 +731,22 @@ function BudgetLedger({ mode, session, onSignOut }) {
     setPriceStatus(ok ? ("Updated " + ok + " price" + (ok === 1 ? "" : "s") + (fail ? " · " + fail + " not found" : "") + " · " + ts) : "Couldn't fetch — check your key and tickers.");
   };
   doRefreshRef.current = refreshPrices;
+  const recordHistory = () => {
+    if (!(investTotal > 0)) return;
+    mutate((s) => {
+      if (!s.investing) return;
+      if (!Array.isArray(s.investing.history)) s.investing.history = [];
+      const d = new Date();
+      const today = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+      const v = Math.round(investTotal * 100) / 100;
+      const hist = s.investing.history;
+      const last = hist[hist.length - 1];
+      if (last && last.t === today) last.v = v;
+      else hist.push({ t: today, v });
+      if (hist.length > 400) hist.splice(0, hist.length - 400);
+    });
+  };
+  recordHistoryRef.current = recordHistory;
 
   const handleImport = (e) => {
     const f = e.target.files && e.target.files[0];
@@ -842,7 +862,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
         )}
 
         {page === "investments" && (
-          <InvestmentsPage accounts={accounts} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddBuy={addBuy} onEditBuy={editBuy} onDelBuy={delBuy} />
+          <InvestmentsPage accounts={accounts} history={investing.history || []} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddBuy={addBuy} onEditBuy={editBuy} onDelBuy={delBuy} />
         )}
 
         {page === "settings" && (
@@ -1041,8 +1061,10 @@ function CashFlowChart({ rows, onPick }) {
   );
 }
 
-function NetWorthChart({ points }) {
-  if (points.length === 0) return <div className="empty">No snapshots yet — tap "Capture" above for a month and your net worth line starts here.</div>;
+function NetWorthChart({ points, color, areaFill, emptyMsg }) {
+  const stroke = color || "#0e6183";
+  const aFill = areaFill || "#dcedf3";
+  if (points.length === 0) return <div className="empty">{emptyMsg || "No snapshots yet — tap \"Capture\" above for a month and your net worth line starts here."}</div>;
   const W = 1000, H = 220, padL = 54, padR = 16, padT = 16, padB = 30;
   const plotW = W - padL - padR, plotH = H - padT - padB;
   const vals = points.map((p) => p.nw);
@@ -1056,15 +1078,15 @@ function NetWorthChart({ points }) {
   return (
     <div className="chartwrap">
       <svg viewBox={"0 0 " + W + " " + H} width="100%" preserveAspectRatio="xMidYMid meet" style={{ display: "block" }}>
-        <text x={padL - 8} y={padT + 4} textAnchor="end" fontSize="10" fill="#a7b3b7" fontFamily="'JetBrains Mono', monospace">{usd0(max)}</text>
-        <text x={padL - 8} y={padT + plotH + 4} textAnchor="end" fontSize="10" fill="#a7b3b7" fontFamily="'JetBrains Mono', monospace">{usd0(min)}</text>
-        <line x1={padL} y1={padT + plotH} x2={W - padR} y2={padT + plotH} stroke="#e6ecec" strokeWidth="1" />
-        {area && <path d={area} fill="#e2eef2" />}
-        <path d={line} fill="none" stroke="#0e5b71" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        <text x={padL - 8} y={padT + 4} textAnchor="end" fontSize="10" fill="#788790" fontFamily="'JetBrains Mono', monospace">{usd0(max)}</text>
+        <text x={padL - 8} y={padT + plotH + 4} textAnchor="end" fontSize="10" fill="#788790" fontFamily="'JetBrains Mono', monospace">{usd0(min)}</text>
+        <line x1={padL} y1={padT + plotH} x2={W - padR} y2={padT + plotH} stroke="#d7dfe3" strokeWidth="1" />
+        {area && <path d={area} fill={aFill} />}
+        <path d={line} fill="none" stroke={stroke} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
         {points.map((p, i) => (
           <g key={p.k}>
-            <circle cx={xAt(i)} cy={yAt(p.nw)} r="3.5" fill="#0e5b71" />
-            <text x={xAt(i)} y={H - 10} textAnchor="middle" fontSize="10.5" fill="#79888e" fontFamily="'Space Grotesk', sans-serif" fontWeight="500">{p.label.split(" ")[0].slice(0, 3)}</text>
+            <circle cx={xAt(i)} cy={yAt(p.nw)} r="3.5" fill={stroke} />
+            <text x={xAt(i)} y={H - 10} textAnchor="middle" fontSize="10.5" fill="#54646e" fontFamily="'Space Grotesk', sans-serif" fontWeight="500">{p.label.split(" ")[0].slice(0, 3)}</text>
           </g>
         ))}
       </svg>
@@ -1148,6 +1170,43 @@ function RothPage({ limit, contributions = [], accounts = [], onSetLimit, onAdd,
         </div>
       </div>
     </React.Fragment>
+  );
+}
+
+function HistoryChart({ points, color, areaFill, emptyMsg }) {
+  const stroke = color || "#14794a";
+  const aFill = areaFill || "#dcf0e5";
+  if (!points || points.length === 0) return <div className="empty">{emptyMsg || "Open the app a few times and this fills in on its own."}</div>;
+  const W = 1000, H = 220, padL = 54, padR = 16, padT = 16, padB = 30;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const vals = points.map((p) => p.v);
+  let max = Math.max(...vals), min = Math.min(...vals);
+  if (max === min) { const pad = Math.abs(max || 1) * 0.1 + 1; max += pad; min -= pad; }
+  const span = max - min;
+  const n = points.length;
+  const xAt = (i) => n === 1 ? padL + plotW / 2 : padL + plotW * i / (n - 1);
+  const yAt = (v) => padT + plotH - ((v - min) / span) * plotH;
+  const line = points.map((p, i) => (i === 0 ? "M" : "L") + xAt(i).toFixed(1) + " " + yAt(p.v).toFixed(1)).join(" ");
+  const area = n > 1 ? line + " L " + xAt(n - 1).toFixed(1) + " " + (padT + plotH) + " L " + xAt(0).toFixed(1) + " " + (padT + plotH) + " Z" : "";
+  const fmt = (t) => { const p = String(t).split("-"); return parseInt(p[1], 10) + "/" + parseInt(p[2], 10); };
+  const maxTicks = 6;
+  const tickIdx = [];
+  if (n <= maxTicks) { for (let i = 0; i < n; i++) tickIdx.push(i); }
+  else { for (let j = 0; j < maxTicks; j++) tickIdx.push(Math.round(j * (n - 1) / (maxTicks - 1))); }
+  return (
+    <div className="chartwrap">
+      <svg viewBox={"0 0 " + W + " " + H} width="100%" preserveAspectRatio="xMidYMid meet" style={{ display: "block" }}>
+        <text x={padL - 8} y={padT + 4} textAnchor="end" fontSize="10" fill="#788790" fontFamily="'JetBrains Mono', monospace">{usd0(max)}</text>
+        <text x={padL - 8} y={padT + plotH + 4} textAnchor="end" fontSize="10" fill="#788790" fontFamily="'JetBrains Mono', monospace">{usd0(min)}</text>
+        <line x1={padL} y1={padT + plotH} x2={W - padR} y2={padT + plotH} stroke="#d7dfe3" strokeWidth="1" />
+        {area && <path d={area} fill={aFill} />}
+        <path d={line} fill="none" stroke={stroke} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+        <circle cx={xAt(n - 1)} cy={yAt(points[n - 1].v)} r="3.5" fill={stroke} />
+        {tickIdx.map((i) => (
+          <text key={i} x={xAt(i)} y={H - 10} textAnchor="middle" fontSize="10.5" fill="#54646e" fontFamily="'JetBrains Mono', monospace">{fmt(points[i].t)}</text>
+        ))}
+      </svg>
+    </div>
   );
 }
 
@@ -1399,6 +1458,7 @@ function SettingsPage(props) {
 function InvestmentsPage(props) {
   const list = (props.accounts || []).filter((a) => a.type === "investment");
   const allHoldings = list.flatMap((a) => (a.holdings || []).map((h) => ({ h, acct: a.name })));
+  const ivHist = props.history || [];
   const invested = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + holdCost(h), 0), 0);
   const value = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + holdValue(h), 0), 0);
   const gain = value - invested;
@@ -1420,6 +1480,13 @@ function InvestmentsPage(props) {
           <div className={"tval num " + (gain >= 0 ? "pos" : "neg")}>{gain >= 0 ? "+" : "−"}{usd0(Math.abs(gain))}</div>
           <div className="tsub">{invested > 0 ? (gain >= 0 ? "+" : "−") + Math.abs(gainPct).toFixed(1) + "% on what you invested" : "add holdings to track"}</div>
         </div>
+      </div>
+      <div className="panel">
+        <div className="phead">
+          <div className="t">Investments over time</div>
+          <div className="hint">records automatically each time you open the app</div>
+        </div>
+        <HistoryChart points={ivHist} color="#14794a" areaFill="#dcf0e5" emptyMsg={"Nothing plotted yet — this fills in on its own each time you open the app, once you're holding something."} />
       </div>
       {allHoldings.length > 0 && (
         <div className="panel">
