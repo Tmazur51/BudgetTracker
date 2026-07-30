@@ -303,6 +303,9 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 .led .keyin { flex:1; min-width:170px; border:1px solid var(--line-2); border-radius:9px; padding:9px 11px; font-family:var(--font-m); font-size:13px; background:#fff; color:var(--ink); }
 .led .keyin:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
 .led .pnote { width:100%; font-family:var(--font-m); font-size:11px; color:var(--faint); }
+.led .acctinfo { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.led .ai-lab { font-family:var(--font-d); text-transform:uppercase; letter-spacing:.08em; font-size:10px; font-weight:600; color:var(--muted); }
+.led .ai-val { font-size:14px; color:var(--ink); margin-top:3px; }
 .led .addacct { display:flex; gap:8px; align-items:center; margin-top:4px; }
 .led .addacct input { flex:1; border:1px solid var(--line-2); border-radius:8px; padding:9px 10px; font-family:var(--font-b); font-size:13px; background:#fff; color:var(--ink); }
 .led .addacct input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
@@ -337,7 +340,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V3.3</div>
+<div class="version">V3.4</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -503,10 +506,13 @@ function Brand({ small }) {
   return (
     <div className="mark" style={small ? { marginRight: 0 } : undefined}>
       <div className="logo">
-        <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
-          <path d="M3 18a9 9 0 0 1 18 0" stroke="#fff" strokeWidth="1.7" strokeLinecap="round"/>
-          <path d="M12 18L16 9" stroke="#fff" strokeWidth="1.7" strokeLinecap="round"/>
-          <circle cx="12" cy="18" r="1.7" fill="#fff"/>
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6.6 5.7A8.4 8.4 0 0 0 4.2 14" opacity="0.5"/>
+          <path d="M6.2 4.4 6.7 5.9 5.1 6.2" opacity="0.5"/>
+          <path d="M17.4 18.3A8.4 8.4 0 0 0 19.8 10" opacity="0.5"/>
+          <path d="M17.8 19.6 17.3 18.1 18.9 17.8" opacity="0.5"/>
+          <path d="M14.6 9c0-1.3-1.2-2-2.6-2s-2.6.8-2.6 2c0 2.7 5.2 1.4 5.2 4 0 1.3-1.2 2.1-2.6 2.1s-2.6-.8-2.6-2.1"/>
+          <path d="M12 5.4v13.2"/>
         </svg>
       </div>
       <div><h1>CashFlux</h1><p>Personal budget console</p></div>
@@ -747,17 +753,12 @@ function BudgetLedger({ mode, session, onSignOut }) {
             <button className={"tab" + (page === "hysa" ? " on" : "")} onClick={() => setPage("hysa")}>HYSA</button>
             <button className={"tab" + (page === "investments" ? " on" : "")} onClick={() => setPage("investments")}>Investments</button>
             <button className={"tab" + (page === "roth" ? " on" : "")} onClick={() => setPage("roth")}>Roth</button>
+            <button className={"tab" + (page === "settings" ? " on" : "")} onClick={() => setPage("settings")}>Account</button>
           </nav>
           <div className="util">
             <button className="btn ghost small" onClick={() => exportData(state)}>Backup</button>
             <button className="btn ghost small" onClick={() => fileRef.current && fileRef.current.click()}>Restore</button>
             <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: "none" }} onChange={handleImport} />
-            {mode === "cloud" && (
-              <React.Fragment>
-                <span className="who">{session.user.email}</span>
-                <button className="btn ghost small" onClick={onSignOut}>Sign out</button>
-              </React.Fragment>
-            )}
           </div>
         </div>
 
@@ -841,7 +842,11 @@ function BudgetLedger({ mode, session, onSignOut }) {
         )}
 
         {page === "investments" && (
-          <InvestmentsPage accounts={accounts} finnhubKey={state.settings.finnhubKey || ""} priceStatus={priceStatus} onSetKey={setFinnhubKey} onRefresh={refreshPrices} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddBuy={addBuy} onEditBuy={editBuy} onDelBuy={delBuy} />
+          <InvestmentsPage accounts={accounts} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddBuy={addBuy} onEditBuy={editBuy} onDelBuy={delBuy} />
+        )}
+
+        {page === "settings" && (
+          <SettingsPage finnhubKey={state.settings.finnhubKey || ""} priceStatus={priceStatus} onSetKey={setFinnhubKey} onRefresh={refreshPrices} mode={mode} email={mode === "cloud" && session ? session.user.email : ""} onSignOut={onSignOut} />
         )}
       </div>
 
@@ -1365,6 +1370,32 @@ function HysaPage(props) {
   );
 }
 
+function SettingsPage(props) {
+  return (
+    <React.Fragment>
+      <div className="panel">
+        <div className="phead"><div className="t">Stock prices</div><div className="hint">auto-updates each time you open the app</div></div>
+        <div className="pricebar">
+          <input className="keyin" placeholder="Finnhub API key" value={props.finnhubKey} onChange={(e) => props.onSetKey(e.target.value)} />
+          <button className="btn primary small" onClick={props.onRefresh}>Update prices now</button>
+          <div className="pnote">Get a free key at finnhub.io and paste it here once. Give each holding a ticker (VOO, VTI, AAPL). ETFs and stocks work; mutual funds may not be covered.{props.priceStatus ? " · " + props.priceStatus : ""}</div>
+        </div>
+      </div>
+      <div className="panel">
+        <div className="phead"><div className="t">Account</div><div className="hint">{props.mode === "cloud" ? "signed in & syncing" : "local mode"}</div></div>
+        {props.mode === "cloud" ? (
+          <div className="acctinfo">
+            <div><div className="ai-lab">Signed in as</div><div className="ai-val num">{props.email}</div></div>
+            <button className="btn ghost small" onClick={props.onSignOut}>Sign out</button>
+          </div>
+        ) : (
+          <div className="pnote" style={{ width: "auto" }}>Your data is stored in this browser only. On your deployed site you can sign in to sync across devices.</div>
+        )}
+      </div>
+    </React.Fragment>
+  );
+}
+
 function InvestmentsPage(props) {
   const list = (props.accounts || []).filter((a) => a.type === "investment");
   const allHoldings = list.flatMap((a) => (a.holdings || []).map((h) => ({ h, acct: a.name })));
@@ -1381,11 +1412,6 @@ function InvestmentsPage(props) {
   const fv = r > 0 ? value * Math.pow(1 + r, nMonths) + pmt * ((Math.pow(1 + r, nMonths) - 1) / r) : value + pmt * nMonths;
   return (
     <React.Fragment>
-      <div className="pricebar">
-        <input className="keyin" placeholder="Finnhub API key (for auto-prices)" value={props.finnhubKey} onChange={(e) => props.onSetKey(e.target.value)} />
-        <button className="btn primary small" onClick={props.onRefresh}>Update prices</button>
-        <div className="pnote">Free key at finnhub.io — paste once, give each holding a ticker, and prices refresh when you open the app.{props.priceStatus ? " · " + props.priceStatus : ""}</div>
-      </div>
       <div className="tiles">
         <div className="tile brand"><div className="tlab">Value now</div><div className="tval num brand">{usd(value)}</div></div>
         <div className="tile"><div className="tlab">Invested</div><div className="tval num">{usd(invested)}</div></div>
