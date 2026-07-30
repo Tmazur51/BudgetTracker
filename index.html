@@ -285,6 +285,17 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 .led .hf input { width:90px; border:1px solid var(--line-2); border-radius:8px; padding:7px 9px; font-family:var(--font-m); font-size:13px; background:#fff; color:var(--ink); }
 .led .hf input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
 .led .holdbtns { display:flex; gap:4px; margin-left:auto; align-self:center; }
+.led .holdmeta { display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; margin-bottom:7px; }
+.led .holdmeta .del { align-self:center; margin-left:auto; }
+.led .holdsum { font-family:var(--font-m); font-size:11.5px; color:var(--faint); align-self:center; }
+.led .buylog { margin:2px 0 4px; }
+.led .buylog th { font-size:9.5px; }
+.led .buylog td { padding:2px 8px 2px 0; }
+.led .glancelist { display:flex; flex-direction:column; gap:2px; }
+.led .glance { display:grid; grid-template-columns:1fr auto auto; align-items:baseline; gap:12px; padding:9px 0; border-top:1px dashed var(--line); }
+.led .glance:first-child { border-top:0; }
+.led .gname { font-family:var(--font-d); font-weight:600; font-size:13.5px; color:var(--ink); }
+.led .gval { font-family:var(--font-m); font-weight:600; font-size:13.5px; color:var(--ink); }
 .led .addacct { display:flex; gap:8px; align-items:center; margin-top:4px; }
 .led .addacct input { flex:1; border:1px solid var(--line-2); border-radius:8px; padding:9px 10px; font-family:var(--font-b); font-size:13px; background:#fff; color:var(--ink); }
 .led .addacct input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
@@ -319,7 +330,7 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V3.0</div>
+<div class="version">V3.1</div>
 <div id="root"><div class="boot">Loading Ledger…</div></div>
 
 <script>
@@ -407,8 +418,9 @@ const sumAmt = (rows) => rows.reduce((a, r) => a + ((r.excluded || r.category ==
 const fmtDate = (d) => { const p = String(d || "").split("-"); if (p.length !== 3) return d || ""; return MONTH_NAMES[+p[1] - 1].slice(0, 3) + " " + (+p[2]); };
 const toNum = (s) => { const v = parseFloat(String(s).replace(/[^0-9.\-]/g, "")); return isNaN(v) ? 0 : v; };
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
-const holdValue = (h) => toNum(h.shares) * toNum(h.price);
-const holdCost = (h) => toNum(h.shares) * toNum(h.paid);
+const holdShares = (h) => (h.buys || []).reduce((t, b) => t + toNum(b.shares), 0);
+const holdCost = (h) => (h.buys || []).reduce((t, b) => t + toNum(b.shares) * toNum(b.price), 0);
+const holdValue = (h) => holdShares(h) * toNum(h.price);
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function exportData(state) {
@@ -435,11 +447,18 @@ function migrate(s) {
       balance: a.balance != null ? a.balance : "",
       apy: a.apy != null ? a.apy : "",
       holdings: (Array.isArray(a.holdings) ? a.holdings : []).map((h) => {
-        if (h.shares !== undefined || h.price !== undefined || h.paid !== undefined) {
-          return { id: h.id || uid(), name: h.name != null ? h.name : "", shares: h.shares != null ? String(h.shares) : "", paid: h.paid != null ? String(h.paid) : "", price: h.price != null ? String(h.price) : "" };
+        let price = "", buys = [];
+        if (Array.isArray(h.buys)) {
+          price = h.price != null ? String(h.price) : "";
+          buys = h.buys.map((b) => ({ id: b.id || uid(), shares: b.shares != null ? String(b.shares) : "", price: b.price != null ? String(b.price) : "" }));
+        } else if (h.shares !== undefined || h.paid !== undefined) {
+          price = h.price != null ? String(h.price) : (h.paid != null ? String(h.paid) : "");
+          if (toNum(h.shares) !== 0 || toNum(h.paid) !== 0) buys = [{ id: uid(), shares: String(h.shares != null ? h.shares : "0"), price: String(h.paid != null ? h.paid : "0") }];
+        } else if (h.invested !== undefined || h.value !== undefined) {
+          price = h.value != null ? String(round2(toNum(h.value))) : "";
+          buys = [{ id: uid(), shares: "1", price: h.invested != null ? String(round2(toNum(h.invested))) : "0" }];
         }
-        const hasOld = h.invested != null || h.value != null;
-        return { id: h.id || uid(), name: h.name != null ? h.name : "", shares: hasOld ? "1" : "", paid: h.invested != null ? String(round2(toNum(h.invested))) : "", price: h.value != null ? String(round2(toNum(h.value))) : "" };
+        return { id: h.id || uid(), name: h.name != null ? h.name : "", price, buys };
       }),
     };
   });
@@ -655,10 +674,12 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const setRothLimit = (v) => mutate((s) => { if (!s.roth) s.roth = { limit: 7500, contributions: [] }; s.roth.limit = v; });
   const addRothContribution = (amount, date) => mutate((s) => { if (!s.roth) s.roth = { limit: 7500, contributions: [] }; if (!s.roth.contributions) s.roth.contributions = []; s.roth.contributions.push({ id: uid(), amount, date }); });
   const delRothContribution = (id) => mutate((s) => { if (!s.roth || !s.roth.contributions) return; s.roth.contributions = s.roth.contributions.filter((c) => c.id !== id); });
-  const addHolding = (acctId, name, shares, paid, price) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a) { if (!a.holdings) a.holdings = []; a.holdings.push({ id: uid(), name, shares, paid, price }); } });
+  const addHolding = (acctId, name, shares, price) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a) { if (!a.holdings) a.holdings = []; const buys = (toNum(shares) !== 0 || toNum(price) !== 0) ? [{ id: uid(), shares, price }] : []; a.holdings.push({ id: uid(), name, price, buys }); } });
   const editHolding = (acctId, hId, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) h[field] = value; } });
   const delHolding = (acctId, hId) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) a.holdings = a.holdings.filter((y) => y.id !== hId); });
-  const addToHolding = (acctId, hId, buyShares, buyPrice) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) { const n = toNum(buyShares), p = toNum(buyPrice); const oldSh = toNum(h.shares), oldPaid = toNum(h.paid); const newSh = oldSh + n; if (newSh > 0) { h.paid = String(round2((oldSh * oldPaid + n * p) / newSh)); } h.shares = String(Math.round(newSh * 1e6) / 1e6); if (p > 0) h.price = String(p); } } });
+  const addBuy = (acctId, hId, shares, price) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) { if (!h.buys) h.buys = []; h.buys.push({ id: uid(), shares, price }); } } });
+  const editBuy = (acctId, hId, buyId, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h && h.buys) { const b = h.buys.find((z) => z.id === buyId); if (b) b[field] = value; } } });
+  const delBuy = (acctId, hId, buyId) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h && h.buys) h.buys = h.buys.filter((z) => z.id !== buyId); } });
 
   const handleImport = (e) => {
     const f = e.target.files && e.target.files[0];
@@ -771,15 +792,15 @@ function BudgetLedger({ mode, session, onSignOut }) {
         )}
 
         {page === "roth" && (
-          <RothPage limit={roth.limit} contributions={roth.contributions || []} accounts={accounts} onSetLimit={setRothLimit} onAdd={addRothContribution} onDel={delRothContribution} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddToHolding={addToHolding} />
+          <RothPage limit={roth.limit} contributions={roth.contributions || []} accounts={accounts} onSetLimit={setRothLimit} onAdd={addRothContribution} onDel={delRothContribution} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddBuy={addBuy} onEditBuy={editBuy} onDelBuy={delBuy} />
         )}
 
         {page === "hysa" && (
-          <HysaPage accounts={accounts} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddToHolding={addToHolding} />
+          <HysaPage accounts={accounts} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddBuy={addBuy} onEditBuy={editBuy} onDelBuy={delBuy} />
         )}
 
         {page === "investments" && (
-          <InvestmentsPage accounts={accounts} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddToHolding={addToHolding} />
+          <InvestmentsPage accounts={accounts} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddBuy={addBuy} onEditBuy={editBuy} onDelBuy={delBuy} />
         )}
       </div>
 
@@ -1005,7 +1026,7 @@ function NetWorthChart({ points }) {
   );
 }
 
-function RothPage({ limit, contributions = [], accounts = [], onSetLimit, onAdd, onDel, onAddAccount, onEditAccount, onDelAccount, onAddHolding, onEditHolding, onDelHolding, onAddToHolding }) {
+function RothPage({ limit, contributions = [], accounts = [], onSetLimit, onAdd, onDel, onAddAccount, onEditAccount, onDelAccount, onAddHolding, onEditHolding, onDelHolding, onAddBuy, onEditBuy, onDelBuy }) {
   const now = new Date();
   const year = now.getFullYear();
   const lim = toNum(limit) || 0;
@@ -1053,7 +1074,7 @@ function RothPage({ limit, contributions = [], accounts = [], onSetLimit, onAdd,
 
       <div className="panel">
         <div className="phead"><div className="t">Roth holdings</div><div className="hint">the stocks &amp; funds inside your Roth and what they're worth</div></div>
-        <AccountList list={rothList} defaultType="roth" addPlaceholder="Roth account (e.g. Fidelity Roth)" emptyText="No Roth account yet — add it below, then add the holdings inside it." onAddAccount={onAddAccount} onEditAccount={onEditAccount} onDelAccount={onDelAccount} onAddHolding={onAddHolding} onEditHolding={onEditHolding} onDelHolding={onDelHolding} onAddToHolding={onAddToHolding} />
+        <AccountList list={rothList} defaultType="roth" addPlaceholder="Roth account (e.g. Fidelity Roth)" emptyText="No Roth account yet — add it below, then add the holdings inside it." onAddAccount={onAddAccount} onEditAccount={onEditAccount} onDelAccount={onDelAccount} onAddHolding={onAddHolding} onEditHolding={onEditHolding} onDelHolding={onDelHolding} onAddBuy={onAddBuy} onEditBuy={onEditBuy} onDelBuy={onDelBuy} />
       </div>
 
       <div className="panel">
@@ -1162,7 +1183,52 @@ function OverviewPage({ months, cats, hysaTotal, investTotal, rothValue, netWort
   );
 }
 
-function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDelHolding, onAddToHolding }) {
+function HoldingCard({ account, h, onEditHolding, onDelHolding, onAddBuy, onEditBuy, onDelBuy }) {
+  const shares = holdShares(h), cost = holdCost(h), val = holdValue(h), g = val - cost, p = cost > 0 ? g / cost * 100 : 0;
+  const avg = shares > 0 ? cost / shares : 0;
+  const buys = h.buys || [];
+  const [bSh, setBSh] = useState("");
+  const [bPr, setBPr] = useState("");
+  const logBuy = () => { if (!bSh && !bPr) return; onAddBuy(account.id, h.id, bSh || "0", bPr || (h.price || "0")); setBSh(""); setBPr(""); };
+  return (
+    <div className="hold">
+      <div className="holdtop">
+        <input className="holdname" value={h.name} placeholder="Holding" onChange={(e) => onEditHolding(account.id, h.id, "name", e.target.value)} />
+        <div className="holdvg">
+          <span className="holdvalue num">{usd(val)}</span>
+          <span className={"gl " + (g >= 0 ? "up" : "down")}>{g >= 0 ? "+" : "−"}{usd0(Math.abs(g))}{cost > 0 ? " (" + (g >= 0 ? "+" : "−") + Math.abs(p).toFixed(1) + "%)" : ""}</span>
+        </div>
+      </div>
+      <div className="holdmeta">
+        <label className="hf"><span>Price now / sh</span><input inputMode="decimal" value={h.price} onChange={(e) => onEditHolding(account.id, h.id, "price", e.target.value)} /></label>
+        <span className="holdsum num">{Math.round(shares * 1e4) / 1e4} sh · avg {usd(avg)}/sh</span>
+        <button className="del" onClick={() => onDelHolding(account.id, h.id)} aria-label="Delete holding" title="Remove holding">×</button>
+      </div>
+      {buys.length > 0 && (
+        <table className="ledgerT buylog">
+          <thead><tr><th>Bought (sh)</th><th className="r">Price / sh</th><th className="r">Cost</th><th style={{ width: 30 }}></th></tr></thead>
+          <tbody>
+            {buys.map((b) => (
+              <tr key={b.id}>
+                <td><input className="cell" inputMode="decimal" value={b.shares} onChange={(e) => onEditBuy(account.id, h.id, b.id, "shares", e.target.value)} /></td>
+                <td className="r"><input className="cell amt" inputMode="decimal" value={b.price} onChange={(e) => onEditBuy(account.id, h.id, b.id, "price", e.target.value)} /></td>
+                <td className="r"><span className="num" style={{ fontSize: "12px", color: "var(--ink-soft)" }}>{usd(toNum(b.shares) * toNum(b.price))}</span></td>
+                <td><button className="del" onClick={() => onDelBuy(account.id, h.id, b.id)} aria-label="Delete buy">×</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="addrow">
+        <input className="fname" placeholder="Shares bought" inputMode="decimal" value={bSh} onChange={(e) => setBSh(e.target.value)} onKeyDown={(e) => e.key === "Enter" && logBuy()} />
+        <input className="famt" placeholder="Price / sh" inputMode="decimal" value={bPr} onChange={(e) => setBPr(e.target.value)} onKeyDown={(e) => e.key === "Enter" && logBuy()} />
+        <button className="btn primary small" onClick={logBuy}>Log buy</button>
+      </div>
+    </div>
+  );
+}
+
+function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDelHolding, onAddBuy, onEditBuy, onDelBuy }) {
   const isInv = account.type !== "cash";
   const holds = account.holdings || [];
   const invested = holds.reduce((a, h) => a + holdCost(h), 0);
@@ -1171,13 +1237,8 @@ function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDe
   const gpct = invested > 0 ? gain / invested * 100 : 0;
   const [hn, setHn] = useState("");
   const [hSh, setHSh] = useState("");
-  const [hPaid, setHPaid] = useState("");
   const [hPrice, setHPrice] = useState("");
-  const addH = () => { if (!hn.trim() && !hSh && !hPaid && !hPrice) return; onAddHolding(account.id, hn.trim() || "Holding", hSh || "0", hPaid || "0", hPrice || hPaid || "0"); setHn(""); setHSh(""); setHPaid(""); setHPrice(""); };
-  const [addId, setAddId] = useState(null);
-  const [buyShares, setBuyShares] = useState("");
-  const [buyPrice, setBuyPrice] = useState("");
-  const doBuy = (hid) => { if (!buyShares && !buyPrice) { setAddId(null); return; } onAddToHolding(account.id, hid, buyShares || "0", buyPrice || "0"); setBuyShares(""); setBuyPrice(""); setAddId(null); };
+  const addH = () => { if (!hn.trim() && !hSh && !hPrice) return; onAddHolding(account.id, hn.trim() || "Holding", hSh || "0", hPrice || "0"); setHn(""); setHSh(""); setHPrice(""); };
 
   return (
     <div className="acct">
@@ -1194,47 +1255,17 @@ function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDe
       {isInv ? (
         <div className="acctBody">
           {holds.length === 0 ? (
-            <div className="empty" style={{ padding: "6px 2px" }}>No holdings yet — add a stock or fund below with its shares, what you paid per share, and the current price.</div>
+            <div className="empty" style={{ padding: "6px 2px" }}>No holdings yet — add a stock or fund below with your first buy (shares and price per share).</div>
           ) : (
-            holds.map((h) => {
-              const val = holdValue(h), cost = holdCost(h), g = val - cost, p = cost > 0 ? g / cost * 100 : 0;
-              return (
-                <div className="hold" key={h.id}>
-                  <div className="holdtop">
-                    <input className="holdname" value={h.name} placeholder="Holding" onChange={(e) => onEditHolding(account.id, h.id, "name", e.target.value)} />
-                    <div className="holdvg">
-                      <span className="holdvalue num">{usd(val)}</span>
-                      <span className={"gl " + (g >= 0 ? "up" : "down")}>{g >= 0 ? "+" : "−"}{usd0(Math.abs(g))}{cost > 0 ? " (" + (g >= 0 ? "+" : "−") + Math.abs(p).toFixed(1) + "%)" : ""}</span>
-                    </div>
-                  </div>
-                  <div className="holdfields">
-                    <label className="hf"><span>Shares</span><input inputMode="decimal" value={h.shares} onChange={(e) => onEditHolding(account.id, h.id, "shares", e.target.value)} /></label>
-                    <label className="hf"><span>Paid / sh</span><input inputMode="decimal" value={h.paid} onChange={(e) => onEditHolding(account.id, h.id, "paid", e.target.value)} /></label>
-                    <label className="hf"><span>Price now</span><input inputMode="decimal" value={h.price} onChange={(e) => onEditHolding(account.id, h.id, "price", e.target.value)} /></label>
-                    <div className="holdbtns">
-                      <button className="addbtn" onClick={() => { setAddId(addId === h.id ? null : h.id); setBuyShares(""); setBuyPrice(h.price != null ? String(h.price) : ""); }} title="Bought more">+</button>
-                      <button className="del" onClick={() => onDelHolding(account.id, h.id)} aria-label="Delete holding">×</button>
-                    </div>
-                  </div>
-                  {addId === h.id && (
-                    <div className="addto">
-                      <span className="lbl">Bought more of {h.name || "this"}:</span>
-                      <input placeholder="Shares" inputMode="decimal" autoFocus value={buyShares} onChange={(e) => setBuyShares(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doBuy(h.id); if (e.key === "Escape") setAddId(null); }} />
-                      <input placeholder="Price / sh" inputMode="decimal" value={buyPrice} onChange={(e) => setBuyPrice(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") doBuy(h.id); }} />
-                      <button className="btn primary small" onClick={() => doBuy(h.id)}>Add</button>
-                      <button className="btn ghost small" onClick={() => setAddId(null)}>Cancel</button>
-                    </div>
-                  )}
-                </div>
-              );
-            })
+            holds.map((h) => (
+              <HoldingCard key={h.id} account={account} h={h} onEditHolding={onEditHolding} onDelHolding={onDelHolding} onAddBuy={onAddBuy} onEditBuy={onEditBuy} onDelBuy={onDelBuy} />
+            ))
           )}
           <div className="addrow">
-            <input className="fname" placeholder="Holding (e.g. VOO)" value={hn} onChange={(e) => setHn(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addH()} />
+            <input className="fname" placeholder="New holding (e.g. VOO)" value={hn} onChange={(e) => setHn(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addH()} />
             <input className="famt" placeholder="Shares" inputMode="decimal" value={hSh} onChange={(e) => setHSh(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addH()} />
-            <input className="famt" placeholder="Paid / sh" inputMode="decimal" value={hPaid} onChange={(e) => setHPaid(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addH()} />
-            <input className="famt" placeholder="Price now" inputMode="decimal" value={hPrice} onChange={(e) => setHPrice(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addH()} />
-            <button className="btn primary small" onClick={addH}>Add</button>
+            <input className="famt" placeholder="Price / sh" inputMode="decimal" value={hPrice} onChange={(e) => setHPrice(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addH()} />
+            <button className="btn primary small" onClick={addH}>Add holding</button>
           </div>
           {holds.length > 0 && (
             <div className="acctFoot"><span>Paid {usd(invested)} · worth {usd(value)}</span><span className={"gl " + (gain >= 0 ? "up" : "down")}>{gain >= 0 ? "+" : "−"}{usd(Math.abs(gain))}{invested > 0 ? " (" + (gain >= 0 ? "+" : "−") + Math.abs(gpct).toFixed(1) + "%)" : ""}</span></div>
@@ -1251,7 +1282,7 @@ function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDe
   );
 }
 
-function AccountList({ list, defaultType, addPlaceholder, emptyText, onAddAccount, onEditAccount, onDelAccount, onAddHolding, onEditHolding, onDelHolding, onAddToHolding }) {
+function AccountList({ list, defaultType, addPlaceholder, emptyText, onAddAccount, onEditAccount, onDelAccount, onAddHolding, onEditHolding, onDelHolding, onAddBuy, onEditBuy, onDelBuy }) {
   const [aName, setAName] = useState("");
   const add = () => { if (!aName.trim()) return; onAddAccount(aName.trim(), defaultType); setAName(""); };
   return (
@@ -1260,7 +1291,7 @@ function AccountList({ list, defaultType, addPlaceholder, emptyText, onAddAccoun
         <div className="empty">{emptyText}</div>
       ) : (
         list.map((a) => (
-          <AccountCard key={a.id} account={a} onEdit={onEditAccount} onDel={onDelAccount} onAddHolding={onAddHolding} onEditHolding={onEditHolding} onDelHolding={onDelHolding} onAddToHolding={onAddToHolding} />
+          <AccountCard key={a.id} account={a} onEdit={onEditAccount} onDel={onDelAccount} onAddHolding={onAddHolding} onEditHolding={onEditHolding} onDelHolding={onDelHolding} onAddBuy={onAddBuy} onEditBuy={onEditBuy} onDelBuy={onDelBuy} />
         ))
       )}
       <div className="addacct">
@@ -1291,6 +1322,7 @@ function HysaPage(props) {
 
 function InvestmentsPage(props) {
   const list = (props.accounts || []).filter((a) => a.type === "investment");
+  const allHoldings = list.flatMap((a) => (a.holdings || []).map((h) => ({ h, acct: a.name })));
   const invested = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + holdCost(h), 0), 0);
   const value = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + holdValue(h), 0), 0);
   const gain = value - invested;
@@ -1313,6 +1345,23 @@ function InvestmentsPage(props) {
           <div className="tsub">{invested > 0 ? (gain >= 0 ? "+" : "−") + Math.abs(gainPct).toFixed(1) + "% on what you invested" : "add holdings to track"}</div>
         </div>
       </div>
+      {allHoldings.length > 0 && (
+        <div className="panel">
+          <div className="phead"><div className="t">Your holdings</div><div className="hint">how each is doing right now</div></div>
+          <div className="glancelist">
+            {allHoldings.map(({ h }) => {
+              const cost = holdCost(h), val = holdValue(h), g = val - cost, p = cost > 0 ? g / cost * 100 : 0;
+              return (
+                <div className="glance" key={h.id}>
+                  <span className="gname">{h.name || "Holding"}</span>
+                  <span className="gval num">{usd(val)}</span>
+                  <span className={"gl " + (g >= 0 ? "up" : "down")}>{g >= 0 ? "+" : "−"}{usd0(Math.abs(g))}{cost > 0 ? " (" + (g >= 0 ? "+" : "−") + Math.abs(p).toFixed(1) + "%)" : ""}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <div className="panel">
         <div className="phead"><div className="t">Investment accounts</div><div className="hint">e.g. your Fidelity Individual — each holds its stocks &amp; funds</div></div>
         <AccountList list={list} defaultType="investment" addPlaceholder="Account (e.g. Fidelity Individual)" emptyText="No investment accounts yet — add your taxable/individual brokerage below, then add the holdings inside it." {...props} />
