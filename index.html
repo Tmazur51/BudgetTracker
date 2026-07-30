@@ -296,6 +296,10 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 .led .glance:first-child { border-top:0; }
 .led .gname { font-family:var(--font-d); font-weight:600; font-size:13.5px; color:var(--ink); }
 .led .gval { font-family:var(--font-m); font-weight:600; font-size:13.5px; color:var(--ink); }
+.led .pricebar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px; margin-bottom:16px; }
+.led .keyin { flex:1; min-width:170px; border:1px solid var(--line-2); border-radius:9px; padding:9px 11px; font-family:var(--font-m); font-size:13px; background:#fff; color:var(--ink); }
+.led .keyin:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
+.led .pnote { width:100%; font-family:var(--font-m); font-size:11px; color:var(--faint); }
 .led .addacct { display:flex; gap:8px; align-items:center; margin-top:4px; }
 .led .addacct input { flex:1; border:1px solid var(--line-2); border-radius:8px; padding:9px 10px; font-family:var(--font-b); font-size:13px; background:#fff; color:var(--ink); }
 .led .addacct input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
@@ -330,7 +334,7 @@ html, body { margin: 0; padding: 0; background: #eef2f1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V3.1</div>
+<div class="version">V3.2</div>
 <div id="root"><div class="boot">Loading Ledger…</div></div>
 
 <script>
@@ -458,7 +462,7 @@ function migrate(s) {
           price = h.value != null ? String(round2(toNum(h.value))) : "";
           buys = [{ id: uid(), shares: "1", price: h.invested != null ? String(round2(toNum(h.invested))) : "0" }];
         }
-        return { id: h.id || uid(), name: h.name != null ? h.name : "", price, buys };
+        return { id: h.id || uid(), name: h.name != null ? h.name : "", ticker: h.ticker != null ? String(h.ticker) : (/^[A-Za-z.]{1,6}$/.test(h.name || "") ? String(h.name).toUpperCase() : ""), price, buys };
       }),
     };
   });
@@ -477,6 +481,8 @@ function migrate(s) {
   if (!s.roth || typeof s.roth !== "object") s.roth = { limit: 7500, contributions: [] };
   if (s.roth.limit == null) s.roth.limit = 7500;
   if (!Array.isArray(s.roth.contributions)) s.roth.contributions = [];
+  if (!s.settings) s.settings = {};
+  if (s.settings.finnhubKey == null) s.settings.finnhubKey = "";
   return s;
 }
 
@@ -486,7 +492,7 @@ function seedState() {
   const months = {
     "2026-05": { label: "May 2026", detailed: true, startingBalance: 0, income: [], expenses: [] },
   };
-  return { version: 1, settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045 }, months, activeMonth: "2026-05", investing: { accounts: [] }, roth: { limit: 7500, contributions: [] } };
+  return { version: 1, settings: { categories, goals, rothMonthlyGoal: 100, hysaAPY: 0.045, finnhubKey: "" }, months, activeMonth: "2026-05", investing: { accounts: [] }, roth: { limit: 7500, contributions: [] } };
 }
 
 /* ============================ auth (cloud mode) ============================ */
@@ -565,9 +571,12 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const [page, setPage] = useState("overview");
   const [showGoals, setShowGoals] = useState(false);
   const [showAddMonth, setShowAddMonth] = useState(false);
+  const [priceStatus, setPriceStatus] = useState("");
   const fileRef = useRef(null);
   const saveTimer = useRef(null);
   const skipSave = useRef(false);
+  const doRefreshRef = useRef(null);
+  const autoRan = useRef(false);
   const userId = session ? session.user.id : null;
 
   // load
@@ -609,6 +618,14 @@ function BudgetLedger({ mode, session, onSignOut }) {
       .subscribe();
     return () => { supabaseClient.removeChannel(ch); };
   }, [mode, userId]);
+
+  // auto-refresh stock prices once per open, if a key is set
+  useEffect(() => {
+    if (!state || autoRan.current) return;
+    if (!state.settings || !(state.settings.finnhubKey || "").trim()) return;
+    autoRan.current = true;
+    if (doRefreshRef.current) doRefreshRef.current();
+  }, [state]);
 
   if (!state) return (<div className="led"><div className="loading">Loading your ledger…</div></div>);
 
@@ -674,12 +691,33 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const setRothLimit = (v) => mutate((s) => { if (!s.roth) s.roth = { limit: 7500, contributions: [] }; s.roth.limit = v; });
   const addRothContribution = (amount, date) => mutate((s) => { if (!s.roth) s.roth = { limit: 7500, contributions: [] }; if (!s.roth.contributions) s.roth.contributions = []; s.roth.contributions.push({ id: uid(), amount, date }); });
   const delRothContribution = (id) => mutate((s) => { if (!s.roth || !s.roth.contributions) return; s.roth.contributions = s.roth.contributions.filter((c) => c.id !== id); });
-  const addHolding = (acctId, name, shares, price) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a) { if (!a.holdings) a.holdings = []; const buys = (toNum(shares) !== 0 || toNum(price) !== 0) ? [{ id: uid(), shares, price }] : []; a.holdings.push({ id: uid(), name, price, buys }); } });
+  const addHolding = (acctId, name, shares, price) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a) { if (!a.holdings) a.holdings = []; const buys = (toNum(shares) !== 0 || toNum(price) !== 0) ? [{ id: uid(), shares, price }] : []; const ticker = /^[A-Za-z.]{1,6}$/.test(name) ? name.toUpperCase() : ""; a.holdings.push({ id: uid(), name, ticker, price, buys }); } });
   const editHolding = (acctId, hId, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) h[field] = value; } });
   const delHolding = (acctId, hId) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) a.holdings = a.holdings.filter((y) => y.id !== hId); });
   const addBuy = (acctId, hId, shares, price) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) { if (!h.buys) h.buys = []; h.buys.push({ id: uid(), shares, price }); } } });
   const editBuy = (acctId, hId, buyId, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h && h.buys) { const b = h.buys.find((z) => z.id === buyId); if (b) b[field] = value; } } });
   const delBuy = (acctId, hId, buyId) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h && h.buys) h.buys = h.buys.filter((z) => z.id !== buyId); } });
+  const setFinnhubKey = (v) => mutate((s) => { s.settings.finnhubKey = v; });
+  const refreshPrices = async () => {
+    const key = (state.settings.finnhubKey || "").trim();
+    if (!key) { setPriceStatus("Paste your free Finnhub key to enable auto-prices."); return; }
+    const targets = [];
+    accounts.forEach((a) => (a.holdings || []).forEach((h) => { const tk = (h.ticker || "").trim().toUpperCase(); if (tk) targets.push({ id: h.id, ticker: tk }); }));
+    if (!targets.length) { setPriceStatus("Add a ticker (e.g. VOO) to a holding first."); return; }
+    setPriceStatus("Updating prices…");
+    const got = {}; let ok = 0, fail = 0;
+    await Promise.all(targets.map(async (t) => {
+      try {
+        const r = await fetch("https://finnhub.io/api/v1/quote?symbol=" + encodeURIComponent(t.ticker) + "&token=" + encodeURIComponent(key));
+        const d = await r.json();
+        if (d && typeof d.c === "number" && d.c > 0) { got[t.id] = d.c; ok++; } else { fail++; }
+      } catch (e) { fail++; }
+    }));
+    if (ok > 0) mutate((s) => { s.investing.accounts.forEach((a) => (a.holdings || []).forEach((h) => { if (got[h.id] != null) h.price = String(round2(got[h.id])); })); });
+    const ts = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    setPriceStatus(ok ? ("Updated " + ok + " price" + (ok === 1 ? "" : "s") + (fail ? " · " + fail + " not found" : "") + " · " + ts) : "Couldn't fetch — check your key and tickers.");
+  };
+  doRefreshRef.current = refreshPrices;
 
   const handleImport = (e) => {
     const f = e.target.files && e.target.files[0];
@@ -800,7 +838,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
         )}
 
         {page === "investments" && (
-          <InvestmentsPage accounts={accounts} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddBuy={addBuy} onEditBuy={editBuy} onDelBuy={delBuy} />
+          <InvestmentsPage accounts={accounts} finnhubKey={state.settings.finnhubKey || ""} priceStatus={priceStatus} onSetKey={setFinnhubKey} onRefresh={refreshPrices} onAddAccount={addAccount} onEditAccount={editAccount} onDelAccount={delAccount} onAddHolding={addHolding} onEditHolding={editHolding} onDelHolding={delHolding} onAddBuy={addBuy} onEditBuy={editBuy} onDelBuy={delBuy} />
         )}
       </div>
 
@@ -1200,6 +1238,7 @@ function HoldingCard({ account, h, onEditHolding, onDelHolding, onAddBuy, onEdit
         </div>
       </div>
       <div className="holdmeta">
+        <label className="hf"><span>Ticker</span><input value={h.ticker || ""} placeholder="VOO" style={{ width: 66, textTransform: "uppercase" }} onChange={(e) => onEditHolding(account.id, h.id, "ticker", e.target.value)} /></label>
         <label className="hf"><span>Price now / sh</span><input inputMode="decimal" value={h.price} onChange={(e) => onEditHolding(account.id, h.id, "price", e.target.value)} /></label>
         <span className="holdsum num">{Math.round(shares * 1e4) / 1e4} sh · avg {usd(avg)}/sh</span>
         <button className="del" onClick={() => onDelHolding(account.id, h.id)} aria-label="Delete holding" title="Remove holding">×</button>
@@ -1336,6 +1375,11 @@ function InvestmentsPage(props) {
   const fv = r > 0 ? value * Math.pow(1 + r, nMonths) + pmt * ((Math.pow(1 + r, nMonths) - 1) / r) : value + pmt * nMonths;
   return (
     <React.Fragment>
+      <div className="pricebar">
+        <input className="keyin" placeholder="Finnhub API key (for auto-prices)" value={props.finnhubKey} onChange={(e) => props.onSetKey(e.target.value)} />
+        <button className="btn primary small" onClick={props.onRefresh}>Update prices</button>
+        <div className="pnote">Free key at finnhub.io — paste once, give each holding a ticker, and prices refresh when you open the app.{props.priceStatus ? " · " + props.priceStatus : ""}</div>
+      </div>
       <div className="tiles">
         <div className="tile brand"><div className="tlab">Value now</div><div className="tval num brand">{usd(value)}</div></div>
         <div className="tile"><div className="tlab">Invested</div><div className="tval num">{usd(invested)}</div></div>
