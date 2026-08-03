@@ -306,6 +306,17 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 .led .acctinfo { display:flex; align-items:center; justify-content:space-between; gap:16px; }
 .led .ai-lab { font-family:var(--font-d); text-transform:uppercase; letter-spacing:.08em; font-size:10px; font-weight:600; color:var(--muted); }
 .led .ai-val { font-size:14px; color:var(--ink); margin-top:3px; }
+.led .ltslist, .led .alloclist { display:flex; flex-direction:column; gap:13px; }
+.led .ltshead, .led .allochead { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:5px; }
+.led .ltsname, .led .aname { font-family:var(--font-d); font-weight:600; font-size:13px; color:var(--ink); }
+.led .ltsfig { font-family:var(--font-m); font-size:12px; font-weight:600; }
+.led .ltsfig.good { color:var(--green); }
+.led .ltsfig.bad { color:var(--red); }
+.led .apct { font-family:var(--font-m); font-size:12.5px; color:var(--brand); font-weight:600; }
+.led .ltstrack, .led .allotrack { height:9px; background:var(--line); border-radius:6px; overflow:hidden; }
+.led .ltsfill, .led .allofill { height:100%; background:var(--brand); border-radius:6px; }
+.led .ltsfill.over { background:var(--red); }
+.led .ltssub, .led .aval { font-family:var(--font-m); font-size:11px; color:var(--faint); margin-top:4px; }
 .led .addacct { display:flex; gap:8px; align-items:center; margin-top:4px; }
 .led .addacct input { flex:1; border:1px solid var(--line-2); border-radius:8px; padding:9px 10px; font-family:var(--font-b); font-size:13px; background:#fff; color:var(--ink); }
 .led .addacct input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
@@ -340,7 +351,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V3.6</div>
+<div class="version">V3.9</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -850,7 +861,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
         )}
 
         {page === "overview" && (
-          <OverviewPage months={state.months} cats={cats} hysaTotal={hysaTotal} investTotal={investTotal} rothValue={rothValue} netWorthNow={netWorthNow} activeLabel={active.label} onCapture={captureNetWorth} onOpenMonth={(k) => { setActive(k); setPage("log"); }} />
+          <OverviewPage months={state.months} cats={cats} hysaTotal={hysaTotal} investTotal={investTotal} rothValue={rothValue} netWorthNow={netWorthNow} activeLabel={active.label} onCapture={captureNetWorth} onOpenMonth={(k) => { setActive(k); setPage("log"); }} goals={goals} spendCats={spendCats} monthIncome={totalIncome} actualByCat={actualByCat} detailed={active.detailed} />
         )}
 
         {page === "roth" && (
@@ -1210,8 +1221,26 @@ function HistoryChart({ points, color, areaFill, emptyMsg }) {
   );
 }
 
-function OverviewPage({ months, cats, hysaTotal, investTotal, rothValue, netWorthNow, activeLabel, onCapture, onOpenMonth }) {
+function OverviewPage({ months, cats, hysaTotal, investTotal, rothValue, netWorthNow, activeLabel, onCapture, onOpenMonth, goals, spendCats, monthIncome, actualByCat, detailed }) {
+  const G = goals || {}, AC = actualByCat || {};
+  const ltsRows = (detailed && (monthIncome || 0) > 0)
+    ? (spendCats || []).filter((c) => (G[c] || 0) > 0).map((c) => { const target = (G[c] || 0) * monthIncome; const spent = AC[c] || 0; return { c, target, spent, left: target - spent }; }).sort((a, b) => a.left - b.left)
+    : [];
   const keys = Object.keys(months).sort();
+  const avgPctByCat = {};
+  (spendCats || []).forEach((c) => {
+    let sum = 0, cnt = 0;
+    keys.forEach((k) => {
+      const m = months[k];
+      if (!m.detailed) return;
+      const inc = sumAmt(m.income);
+      const tgt = (G[c] || 0) * inc;
+      if (tgt <= 0) return;
+      const spent = (m.expenses || []).filter((e) => e.category === c && !e.excluded).reduce((t, e) => t + toNum(e.amount), 0);
+      sum += spent / tgt; cnt++;
+    });
+    avgPctByCat[c] = cnt ? Math.round((sum / cnt) * 100) : null;
+  });
   const rows = keys.map((k) => {
     const m = months[k];
     const inc = m.detailed ? sumAmt(m.income) : m.summary.income;
@@ -1245,6 +1274,20 @@ function OverviewPage({ months, cats, hysaTotal, investTotal, rothValue, netWort
         <div className={"tile " + (avgNet >= 0 ? "pos" : "neg")}><div className="tlab">Avg cash flow / mo</div><div className={"tval num " + (avgNet >= 0 ? "pos" : "neg")}>{avgNet >= 0 ? "+" : "−"}{usd0(Math.abs(avgNet))}</div></div>
       </div>
 
+      {ltsRows.length > 0 && (
+        <div className="panel">
+          <div className="phead"><div className="t">Left to spend · {activeLabel}</div><div className="hint">this month's budget minus what you've spent</div></div>
+          <div className="ltslist">
+            {ltsRows.map((r) => { const pct = r.target > 0 ? Math.min(r.spent / r.target * 100, 100) : 0; const over = r.left < -0.005; return (
+              <div className="lts" key={r.c}>
+                <div className="ltshead"><span className="ltsname">{r.c}</span><span className={"ltsfig " + (over ? "bad" : "good")}>{over ? usd(Math.abs(r.left)) + " over" : usd(r.left) + " left"}</span></div>
+                <div className="ltstrack"><div className={"ltsfill" + (over ? " over" : "")} style={{ width: pct + "%" }} /></div>
+                <div className="ltssub num">{usd(r.spent)} of {usd(r.target)}{avgPctByCat[r.c] != null ? " · avg " + avgPctByCat[r.c] + "% of target" : ""}</div>
+              </div>
+            ); })}
+          </div>
+        </div>
+      )}
       <div className="panel">
         <div className="phead">
           <div className="t">Net worth over time</div>
@@ -1301,7 +1344,7 @@ function HoldingCard({ account, h, onEditHolding, onDelHolding, onAddBuy, onEdit
         <input className="holdname" value={h.name} placeholder="Holding" onChange={(e) => onEditHolding(account.id, h.id, "name", e.target.value)} />
         <div className="holdvg">
           <span className="holdvalue num">{usd(val)}</span>
-          <span className={"gl " + (g >= 0 ? "up" : "down")}>{g >= 0 ? "+" : "−"}{usd0(Math.abs(g))}{cost > 0 ? " (" + (g >= 0 ? "+" : "−") + Math.abs(p).toFixed(1) + "%)" : ""}</span>
+          <span className={"gl " + (g >= 0 ? "up" : "down")}>{g >= 0 ? "+" : "−"}{usd(Math.abs(g))}{cost > 0 ? " (" + (g >= 0 ? "+" : "−") + Math.abs(p).toFixed(1) + "%)" : ""}</span>
         </div>
       </div>
       <div className="holdmeta">
@@ -1459,6 +1502,8 @@ function InvestmentsPage(props) {
   const list = (props.accounts || []).filter((a) => a.type === "investment");
   const allHoldings = list.flatMap((a) => (a.holdings || []).map((h) => ({ h, acct: a.name })));
   const ivHist = props.history || [];
+  const allocRows = allHoldings.map(({ h }) => ({ id: h.id, name: h.name || "Holding", val: holdValue(h) })).filter((r) => r.val > 0).sort((a, b) => b.val - a.val);
+  const allocTotal = allocRows.reduce((t, r) => t + r.val, 0);
   const invested = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + holdCost(h), 0), 0);
   const value = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + holdValue(h), 0), 0);
   const gain = value - invested;
@@ -1477,7 +1522,7 @@ function InvestmentsPage(props) {
         <div className="tile"><div className="tlab">Invested</div><div className="tval num">{usd(invested)}</div></div>
         <div className={"tile " + (gain >= 0 ? "pos" : "neg")}>
           <div className="tlab">Gain / loss</div>
-          <div className={"tval num " + (gain >= 0 ? "pos" : "neg")}>{gain >= 0 ? "+" : "−"}{usd0(Math.abs(gain))}</div>
+          <div className={"tval num " + (gain >= 0 ? "pos" : "neg")}>{gain >= 0 ? "+" : "−"}{usd(Math.abs(gain))}</div>
           <div className="tsub">{invested > 0 ? (gain >= 0 ? "+" : "−") + Math.abs(gainPct).toFixed(1) + "% on what you invested" : "add holdings to track"}</div>
         </div>
       </div>
@@ -1498,10 +1543,24 @@ function InvestmentsPage(props) {
                 <div className="glance" key={h.id}>
                   <span className="gname">{h.name || "Holding"}</span>
                   <span className="gval num">{usd(val)}</span>
-                  <span className={"gl " + (g >= 0 ? "up" : "down")}>{g >= 0 ? "+" : "−"}{usd0(Math.abs(g))}{cost > 0 ? " (" + (g >= 0 ? "+" : "−") + Math.abs(p).toFixed(1) + "%)" : ""}</span>
+                  <span className={"gl " + (g >= 0 ? "up" : "down")}>{g >= 0 ? "+" : "−"}{usd(Math.abs(g))}{cost > 0 ? " (" + (g >= 0 ? "+" : "−") + Math.abs(p).toFixed(1) + "%)" : ""}</span>
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+      {allocRows.length > 0 && (
+        <div className="panel">
+          <div className="phead"><div className="t">Allocation</div><div className="hint">share of your {usd(allocTotal)} invested</div></div>
+          <div className="alloclist">
+            {allocRows.map((r) => { const pct = allocTotal > 0 ? r.val / allocTotal * 100 : 0; return (
+              <div className="alloc" key={r.id}>
+                <div className="allochead"><span className="aname">{r.name}</span><span className="apct num">{pct.toFixed(1)}%</span></div>
+                <div className="allotrack"><div className="allofill" style={{ width: pct + "%" }} /></div>
+                <div className="aval num">{usd(r.val)}</div>
+              </div>
+            ); })}
           </div>
         </div>
       )}
@@ -1512,7 +1571,7 @@ function InvestmentsPage(props) {
       <div className="panel">
         <div className="phead"><div className="t">Projection</div><div className="hint">a rough what-if, compounded monthly</div></div>
         <div className="projgrid">
-          <div className="plead">Starting from your current value of <span className="num">{usd0(value)}</span>:</div>
+          <div className="plead">Starting from your current value of <span className="num">{usd(value)}</span>:</div>
           <div className="projfields">
             <div className="pf"><span>Add / month</span><input inputMode="decimal" value={contrib} onChange={(e) => setContrib(e.target.value)} /></div>
             <div className="pf"><span>Return %/yr</span><input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /></div>
