@@ -325,10 +325,11 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 .led .hsumfill { height:100%; background:var(--brand); border-radius:6px; }
 .led .hsummeta { display:flex; justify-content:space-between; align-items:baseline; margin-top:5px; }
 .led .hsumpct { font-family:var(--font-m); font-size:11.5px; color:var(--muted); }
-.led .lnk { border:1px solid var(--line-2); background:#fff; color:var(--muted); border-radius:7px; width:30px; height:28px; font-size:12px; line-height:1; padding:0; cursor:pointer; }
+.led .lnk { border:1px solid var(--line-2); background:#fff; color:var(--muted); border-radius:7px; width:30px; height:28px; font-size:12px; line-height:1; padding:0; cursor:pointer; font-family:var(--font-m); }
 .led .lnk:hover { border-color:var(--brand); }
-.led .lnk.on { font-weight:700; background:var(--card); }
-.led .lnk.pend { border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
+.led .lnk.on { color:#fff; background:var(--brand); border-color:var(--brand); font-weight:700; }
+.led .lnk.pend { border-color:var(--brand); background:var(--brand-tint); color:var(--brand); font-weight:700; box-shadow:0 0 0 3px var(--brand-tint); }
+.led .netno { display:inline-grid; place-items:center; width:20px; height:20px; border-radius:6px; background:var(--brand); color:#fff; font-family:var(--font-m); font-size:11px; font-weight:700; flex:none; }
 .led .netlist { display:flex; flex-direction:column; gap:11px; }
 .led .netrow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .led .netdot { width:9px; height:9px; border-radius:3px; flex:none; }
@@ -372,7 +373,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V3.12</div>
+<div class="version">V3.13</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -781,8 +782,10 @@ function BudgetLedger({ mode, session, onSignOut }) {
     });
     setLinkPend(null);
   };
-  const LINK_HUES = ["#0e6183", "#14794a", "#9c6c15", "#7d3cae", "#b23a48", "#0e7c86"];
-  const linkColor = (gid) => { let h = 0; const t = String(gid); for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0; return LINK_HUES[h % LINK_HUES.length]; };
+  const linkOrder = [];
+  if (active.detailed) [...(active.income || []), ...(active.expenses || [])].forEach((r) => { if (r.link && linkOrder.indexOf(r.link) === -1) linkOrder.push(r.link); });
+  const linkNum = (gid) => { const i = linkOrder.indexOf(gid); return i === -1 ? linkOrder.length + 1 : i + 1; };
+  const pendNum = linkOrder.length + 1;
   const saveGoals = (newGoals, roth, apy) => mutate((s) => { s.settings.goals = newGoals; s.settings.rothMonthlyGoal = roth; s.settings.hysaAPY = apy; });
   const addMonth = (key, label, startBal) => mutate((s) => { if (s.months[key]) return; s.months[key] = { label, detailed: true, startingBalance: startBal, income: [], expenses: [] }; s.activeMonth = key; });
   const resetAll = () => { skipSave.current = false; setState(seedState()); };
@@ -924,11 +927,11 @@ function BudgetLedger({ mode, session, onSignOut }) {
               <div className="cols">
                 <div className="panel">
                   <div className="phead"><div className="t">Money in</div></div>
-                  <IncomeTable rows={active.income} onEdit={editRow} onDel={delRow} onAdd={addIncome} total={totalIncome} onLink={toggleLink} linkPend={linkPend} linkColor={linkColor} />
+                  <IncomeTable rows={active.income} onEdit={editRow} onDel={delRow} onAdd={addIncome} total={totalIncome} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} />
                 </div>
                 <div className="panel">
                   <div className="phead"><div className="t">Money out</div></div>
-                  <ExpenseTable rows={active.expenses} cats={spendCats} onEdit={editRow} onDel={delRow} onAdd={addExpense} total={totalExpense} onLink={toggleLink} linkPend={linkPend} linkColor={linkColor} />
+                  <ExpenseTable rows={active.expenses} cats={spendCats} onEdit={editRow} onDel={delRow} onAdd={addExpense} total={totalExpense} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} />
                 </div>
               </div>
             )}
@@ -939,7 +942,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
                 <div className="netlist">
                   {linkList.map((g) => (
                     <div className="netrow" key={g.id}>
-                      <span className="netdot" style={{ background: linkColor(g.id) }} />
+                      <span className="netno">{linkNum(g.id)}</span>
                       <span className="netitems">{g.items.map((it, i) => (<span key={i} className="num">{it.out ? "−" : "+"}{usd(it.amt)} {it.name}</span>))}</span>
                       <span className={"netfig " + (Math.abs(g.net) < 0.005 ? "flat" : (g.net > 0 ? "bad" : "good"))}>{Math.abs(g.net) < 0.005 ? "cancels out" : "→ " + (g.net > 0 ? usd(g.net) + " out" : usd(-g.net) + " in")}</span>
                     </div>
@@ -1024,7 +1027,7 @@ function Meter({ name, pct, target, actual, isSavings }) {
   );
 }
 
-function IncomeTable({ rows, onEdit, onDel, onAdd, total, onLink, linkPend, linkColor }) {
+function IncomeTable({ rows, onEdit, onDel, onAdd, total, onLink, linkPend, linkNum, pendNum }) {
   const [src, setSrc] = useState("");
   const [amt, setAmt] = useState("");
   const commit = () => { if (!src.trim() && !amt) return; onAdd(src.trim() || "Income", amt || "0"); setSrc(""); setAmt(""); };
@@ -1038,7 +1041,7 @@ function IncomeTable({ rows, onEdit, onDel, onAdd, total, onLink, linkPend, link
               <tr key={r.id} className={r.excluded ? "excluded" : ""}>
                 <td><input className="cell" value={r.source} onChange={(e) => onEdit("income", r.id, "source", e.target.value)} /></td>
                 <td className="r"><input className="cell amt" inputMode="decimal" value={r.amount} onChange={(e) => onEdit("income", r.id, "amount", e.target.value)} /></td>
-                <td><button className={"lnk" + (r.link ? " on" : "") + (linkPend && linkPend.kind === "income" && linkPend.id === r.id ? " pend" : "")} onClick={() => onLink("income", r.id)} style={r.link ? { color: linkColor(r.link), borderColor: linkColor(r.link) } : undefined} title={r.link ? "Linked — tap to unlink" : (linkPend ? "Tap to link these two together" : "Link with a reimbursement so they net out")} aria-label="Link rows">🔗</button></td>
+                <td><button className={"lnk" + (r.link ? " on" : "") + (linkPend && linkPend.kind === "income" && linkPend.id === r.id ? " pend" : "")} onClick={() => onLink("income", r.id)} title={r.link ? "Linked pair " + linkNum(r.link) + " — tap to unlink" : (linkPend ? "Tap to link these two together" : "Link with a reimbursement so they net out")} aria-label="Link rows">{r.link ? linkNum(r.link) : ((linkPend && linkPend.kind === "income" && linkPend.id === r.id) ? pendNum : "🔗")}</button></td>
                 <td><button className={"excl" + (r.excluded ? " on" : "")} onClick={() => onEdit("income", r.id, "excluded", !r.excluded)} title={r.excluded ? "Excluded from budget — tap to include" : "Exclude from budget (reimbursement / transfer)"} aria-label="Toggle exclude from budget">↔</button></td>
                 <td><button className="del" onClick={() => onDel("income", r.id)} aria-label="Delete">×</button></td>
               </tr>
@@ -1056,7 +1059,7 @@ function IncomeTable({ rows, onEdit, onDel, onAdd, total, onLink, linkPend, link
   );
 }
 
-function ExpenseTable({ rows, cats, onEdit, onDel, onAdd, total, onLink, linkPend, linkColor }) {
+function ExpenseTable({ rows, cats, onEdit, onDel, onAdd, total, onLink, linkPend, linkNum, pendNum }) {
   const [name, setName] = useState("");
   const [amt, setAmt] = useState("");
   const [cat, setCat] = useState("Misc");
@@ -1077,7 +1080,7 @@ function ExpenseTable({ rows, cats, onEdit, onDel, onAdd, total, onLink, linkPen
                     {!cats.includes(r.category) && <option value={r.category}>{r.category}</option>}
                   </select>
                 </td>
-                <td><button className={"lnk" + (r.link ? " on" : "") + (linkPend && linkPend.kind === "expenses" && linkPend.id === r.id ? " pend" : "")} onClick={() => onLink("expenses", r.id)} style={r.link ? { color: linkColor(r.link), borderColor: linkColor(r.link) } : undefined} title={r.link ? "Linked — tap to unlink" : (linkPend ? "Tap to link these two together" : "Link with a reimbursement so they net out")} aria-label="Link rows">🔗</button></td>
+                <td><button className={"lnk" + (r.link ? " on" : "") + (linkPend && linkPend.kind === "expenses" && linkPend.id === r.id ? " pend" : "")} onClick={() => onLink("expenses", r.id)} title={r.link ? "Linked pair " + linkNum(r.link) + " — tap to unlink" : (linkPend ? "Tap to link these two together" : "Link with a reimbursement so they net out")} aria-label="Link rows">{r.link ? linkNum(r.link) : ((linkPend && linkPend.kind === "expenses" && linkPend.id === r.id) ? pendNum : "🔗")}</button></td>
                 <td><button className={"excl" + (r.excluded ? " on" : "")} onClick={() => onEdit("expenses", r.id, "excluded", !r.excluded)} title={r.excluded ? "Excluded from budget — tap to include" : "Exclude from budget (reimbursement / transfer)"} aria-label="Toggle exclude from budget">↔</button></td>
                 <td><button className="del" onClick={() => onDel("expenses", r.id)} aria-label="Delete">×</button></td>
               </tr>
