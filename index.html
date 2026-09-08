@@ -317,6 +317,14 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 .led .ltsfill, .led .allofill { height:100%; background:var(--brand); border-radius:6px; }
 .led .ltsfill.over { background:var(--red); }
 .led .ltssub, .led .aval { font-family:var(--font-m); font-size:11px; color:var(--faint); margin-top:4px; }
+.led .hsumlist { display:flex; flex-direction:column; gap:15px; }
+.led .hsumtop { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+.led .hsumname { font-family:var(--font-d); font-weight:600; font-size:14px; color:var(--ink); }
+.led .hsumval { font-family:var(--font-m); font-weight:600; font-size:14px; color:var(--ink); }
+.led .hsumbar { height:8px; background:var(--line); border-radius:6px; overflow:hidden; }
+.led .hsumfill { height:100%; background:var(--brand); border-radius:6px; }
+.led .hsummeta { display:flex; justify-content:space-between; align-items:baseline; margin-top:5px; }
+.led .hsumpct { font-family:var(--font-m); font-size:11.5px; color:var(--muted); }
 .led .addacct { display:flex; gap:8px; align-items:center; margin-top:4px; }
 .led .addacct input { flex:1; border:1px solid var(--line-2); border-radius:8px; padding:9px 10px; font-family:var(--font-b); font-size:13px; background:#fff; color:var(--ink); }
 .led .addacct input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
@@ -351,7 +359,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V3.9</div>
+<div class="version">V3.11</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -1227,20 +1235,28 @@ function OverviewPage({ months, cats, hysaTotal, investTotal, rothValue, netWort
     ? (spendCats || []).filter((c) => (G[c] || 0) > 0).map((c) => { const target = (G[c] || 0) * monthIncome; const spent = AC[c] || 0; return { c, target, spent, left: target - spent }; }).sort((a, b) => a.left - b.left)
     : [];
   const keys = Object.keys(months).sort();
-  const avgPctByCat = {};
+  const avgPctByCat = {}, avgIncPctByCat = {};
   (spendCats || []).forEach((c) => {
-    let sum = 0, cnt = 0;
+    let sumT = 0, cntT = 0, sumI = 0, cntI = 0;
     keys.forEach((k) => {
       const m = months[k];
       if (!m.detailed) return;
       const inc = sumAmt(m.income);
-      const tgt = (G[c] || 0) * inc;
-      if (tgt <= 0) return;
+      if (inc <= 0) return;
       const spent = (m.expenses || []).filter((e) => e.category === c && !e.excluded).reduce((t, e) => t + toNum(e.amount), 0);
-      sum += spent / tgt; cnt++;
+      sumI += spent / inc; cntI++;
+      const tgt = (G[c] || 0) * inc;
+      if (tgt > 0) { sumT += spent / tgt; cntT++; }
     });
-    avgPctByCat[c] = cnt ? Math.round((sum / cnt) * 100) : null;
+    avgPctByCat[c] = cntT ? Math.round((sumT / cntT) * 100) : null;
+    avgIncPctByCat[c] = cntI ? Math.round((sumI / cntI) * 100) : null;
   });
+  const nwParts = [
+    { k: "Checking", v: netWorthNow - hysaTotal - investTotal - rothValue },
+    { k: "HYSA & cash", v: hysaTotal },
+    { k: "Investments", v: investTotal },
+    { k: "Roth", v: rothValue },
+  ].filter((p) => p.v > 0.005).sort((a, b) => b.v - a.v);
   const rows = keys.map((k) => {
     const m = months[k];
     const inc = m.detailed ? sumAmt(m.income) : m.summary.income;
@@ -1274,6 +1290,20 @@ function OverviewPage({ months, cats, hysaTotal, investTotal, rothValue, netWort
         <div className={"tile " + (avgNet >= 0 ? "pos" : "neg")}><div className="tlab">Avg cash flow / mo</div><div className={"tval num " + (avgNet >= 0 ? "pos" : "neg")}>{avgNet >= 0 ? "+" : "−"}{usd0(Math.abs(avgNet))}</div></div>
       </div>
 
+      {netWorthNow > 0 && nwParts.length > 0 && (
+        <div className="panel">
+          <div className="phead"><div className="t">What's in your net worth</div><div className="hint">share of your {usd0(netWorthNow)}</div></div>
+          <div className="alloclist">
+            {nwParts.map((p) => { const pct = p.v / netWorthNow * 100; return (
+              <div className="alloc" key={p.k}>
+                <div className="allochead"><span className="aname">{p.k}</span><span className="apct num">{pct.toFixed(1)}%</span></div>
+                <div className="allotrack"><div className="allofill" style={{ width: Math.min(pct, 100) + "%" }} /></div>
+                <div className="aval num">{usd0(p.v)}</div>
+              </div>
+            ); })}
+          </div>
+        </div>
+      )}
       {ltsRows.length > 0 && (
         <div className="panel">
           <div className="phead"><div className="t">Left to spend · {activeLabel}</div><div className="hint">this month's budget minus what you've spent</div></div>
@@ -1282,7 +1312,7 @@ function OverviewPage({ months, cats, hysaTotal, investTotal, rothValue, netWort
               <div className="lts" key={r.c}>
                 <div className="ltshead"><span className="ltsname">{r.c}</span><span className={"ltsfig " + (over ? "bad" : "good")}>{over ? usd(Math.abs(r.left)) + " over" : usd(r.left) + " left"}</span></div>
                 <div className="ltstrack"><div className={"ltsfill" + (over ? " over" : "")} style={{ width: pct + "%" }} /></div>
-                <div className="ltssub num">{usd(r.spent)} of {usd(r.target)}{avgPctByCat[r.c] != null ? " · avg " + avgPctByCat[r.c] + "% of target" : ""}</div>
+                <div className="ltssub num">{usd(r.spent)} of {usd(r.target)}{avgIncPctByCat[r.c] != null ? " · avg " + avgIncPctByCat[r.c] + "% of income" : ""}{avgPctByCat[r.c] != null ? " · " + avgPctByCat[r.c] + "% of target" : ""}</div>
               </div>
             ); })}
           </div>
@@ -1502,8 +1532,8 @@ function InvestmentsPage(props) {
   const list = (props.accounts || []).filter((a) => a.type === "investment");
   const allHoldings = list.flatMap((a) => (a.holdings || []).map((h) => ({ h, acct: a.name })));
   const ivHist = props.history || [];
-  const allocRows = allHoldings.map(({ h }) => ({ id: h.id, name: h.name || "Holding", val: holdValue(h) })).filter((r) => r.val > 0).sort((a, b) => b.val - a.val);
-  const allocTotal = allocRows.reduce((t, r) => t + r.val, 0);
+  const holdingSummary = allHoldings.map(({ h }) => { const val = holdValue(h), cost = holdCost(h), gain = val - cost, gpct = cost > 0 ? gain / cost * 100 : 0; return { id: h.id, name: h.name || "Holding", val, cost, gain, gpct }; }).filter((r) => r.val > 0).sort((a, b) => b.val - a.val);
+  const allocTotal = holdingSummary.reduce((t, r) => t + r.val, 0);
   const invested = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + holdCost(h), 0), 0);
   const value = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + holdValue(h), 0), 0);
   const gain = value - invested;
@@ -1533,32 +1563,15 @@ function InvestmentsPage(props) {
         </div>
         <HistoryChart points={ivHist} color="#14794a" areaFill="#dcf0e5" emptyMsg={"Nothing plotted yet — this fills in on its own each time you open the app, once you're holding something."} />
       </div>
-      {allHoldings.length > 0 && (
+      {holdingSummary.length > 0 && (
         <div className="panel">
-          <div className="phead"><div className="t">Your holdings</div><div className="hint">how each is doing right now</div></div>
-          <div className="glancelist">
-            {allHoldings.map(({ h }) => {
-              const cost = holdCost(h), val = holdValue(h), g = val - cost, p = cost > 0 ? g / cost * 100 : 0;
-              return (
-                <div className="glance" key={h.id}>
-                  <span className="gname">{h.name || "Holding"}</span>
-                  <span className="gval num">{usd(val)}</span>
-                  <span className={"gl " + (g >= 0 ? "up" : "down")}>{g >= 0 ? "+" : "−"}{usd(Math.abs(g))}{cost > 0 ? " (" + (g >= 0 ? "+" : "−") + Math.abs(p).toFixed(1) + "%)" : ""}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      {allocRows.length > 0 && (
-        <div className="panel">
-          <div className="phead"><div className="t">Allocation</div><div className="hint">share of your {usd(allocTotal)} invested</div></div>
-          <div className="alloclist">
-            {allocRows.map((r) => { const pct = allocTotal > 0 ? r.val / allocTotal * 100 : 0; return (
-              <div className="alloc" key={r.id}>
-                <div className="allochead"><span className="aname">{r.name}</span><span className="apct num">{pct.toFixed(1)}%</span></div>
-                <div className="allotrack"><div className="allofill" style={{ width: pct + "%" }} /></div>
-                <div className="aval num">{usd(r.val)}</div>
+          <div className="phead"><div className="t">Holdings</div><div className="hint">value, gain, and share of your {usd(allocTotal)}</div></div>
+          <div className="hsumlist">
+            {holdingSummary.map((r) => { const pct = allocTotal > 0 ? r.val / allocTotal * 100 : 0; return (
+              <div className="hsum" key={r.id}>
+                <div className="hsumtop"><span className="hsumname">{r.name}</span><span className="hsumval num">{usd(r.val)}</span></div>
+                <div className="hsumbar"><div className="hsumfill" style={{ width: pct + "%" }} /></div>
+                <div className="hsummeta"><span className="hsumpct num">{pct.toFixed(1)}% of holdings</span><span className={"gl " + (r.gain >= 0 ? "up" : "down")}>{r.gain >= 0 ? "+" : "−"}{usd(Math.abs(r.gain))}{r.cost > 0 ? " (" + (r.gain >= 0 ? "+" : "−") + Math.abs(r.gpct).toFixed(1) + "%)" : ""}</span></div>
               </div>
             ); })}
           </div>
