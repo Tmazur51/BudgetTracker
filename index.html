@@ -373,7 +373,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V3.13</div>
+<div class="version">V3.14</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -1475,6 +1475,7 @@ function HoldingCard({ account, h, onEditHolding, onDelHolding, onAddBuy, onEdit
       </div>
       <div className="holdmeta">
         <label className="hf"><span>Ticker</span><input value={h.ticker || ""} placeholder="VOO" style={{ width: 66, textTransform: "uppercase" }} onChange={(e) => onEditHolding(account.id, h.id, "ticker", e.target.value)} /></label>
+        <label className="hf"><span>Group</span><input value={h.group || ""} placeholder="—" style={{ width: 80 }} onChange={(e) => onEditHolding(account.id, h.id, "group", e.target.value)} /></label>
         <label className="hf"><span>Price now / sh</span><input inputMode="decimal" value={h.price} onChange={(e) => onEditHolding(account.id, h.id, "price", e.target.value)} /></label>
         <span className="holdsum num">{Math.round(shares * 1e4) / 1e4} sh · avg {usd(avg)}/sh</span>
         <button className="del" onClick={() => onDelHolding(account.id, h.id)} aria-label="Delete holding" title="Remove holding">×</button>
@@ -1628,7 +1629,16 @@ function InvestmentsPage(props) {
   const list = (props.accounts || []).filter((a) => a.type === "investment");
   const allHoldings = list.flatMap((a) => (a.holdings || []).map((h) => ({ h, acct: a.name })));
   const ivHist = props.history || [];
-  const holdingSummary = allHoldings.map(({ h }) => { const val = holdValue(h), cost = holdCost(h), gain = val - cost, gpct = cost > 0 ? gain / cost * 100 : 0; return { id: h.id, name: h.name || "Holding", val, cost, gain, gpct }; }).filter((r) => r.val > 0).sort((a, b) => b.val - a.val);
+  const holdMap = {};
+  allHoldings.forEach(({ h }) => {
+    const val = holdValue(h); if (val <= 0) return;
+    const cost = holdCost(h);
+    const g = (h.group || "").trim(), tk = (h.ticker || "").trim().toUpperCase(), nm = (h.name || "").trim();
+    const key = (g || tk || nm || "Holding").toLowerCase();
+    if (!holdMap[key]) holdMap[key] = { label: g || nm || tk || "Holding", val: 0, cost: 0 };
+    holdMap[key].val += val; holdMap[key].cost += cost;
+  });
+  const holdingSummary = Object.keys(holdMap).map((k) => { const gg = holdMap[k]; const gain = gg.val - gg.cost; const gpct = gg.cost > 0 ? gain / gg.cost * 100 : 0; return { id: k, name: gg.label, val: gg.val, cost: gg.cost, gain, gpct }; }).sort((a, b) => b.val - a.val);
   const allocTotal = holdingSummary.reduce((t, r) => t + r.val, 0);
   const invested = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + holdCost(h), 0), 0);
   const value = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + holdValue(h), 0), 0);
@@ -1661,7 +1671,7 @@ function InvestmentsPage(props) {
       </div>
       {holdingSummary.length > 0 && (
         <div className="panel">
-          <div className="phead"><div className="t">Holdings</div><div className="hint">value, gain, and share of your {usd(allocTotal)}</div></div>
+          <div className="phead"><div className="t">Holdings</div><div className="hint">same ticker or group is combined · share of your {usd(allocTotal)}</div></div>
           <div className="hsumlist">
             {holdingSummary.map((r) => { const pct = allocTotal > 0 ? r.val / allocTotal * 100 : 0; return (
               <div className="hsum" key={r.id}>
