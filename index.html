@@ -297,6 +297,18 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 .led .txntag { display:inline-block; font-family:var(--font-m); font-size:9px; font-weight:700; letter-spacing:.06em; padding:2px 5px; border-radius:5px; }
 .led .txntag.buy { background:var(--brand-tint); color:var(--brand); }
 .led .txntag.sell { background:var(--green-tint); color:var(--green); }
+.led .stopline { display:flex; align-items:center; gap:7px; flex-wrap:wrap; padding:7px 0 3px; border-top:1px dashed var(--line); margin-top:2px; }
+.led .stoplab { font-family:var(--font-d); text-transform:uppercase; letter-spacing:.06em; font-size:9.5px; font-weight:600; color:var(--muted); }
+.led .stoppct { width:46px; border:1px solid var(--line-2); border-radius:7px; padding:5px 7px; font-family:var(--font-m); font-size:12px; background:#fff; color:var(--ink); text-align:right; }
+.led .stoppct:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
+.led .stopsym { font-family:var(--font-m); font-size:12px; color:var(--muted); margin-left:-3px; }
+.led .stopbar { flex:1; min-width:70px; height:7px; background:var(--line); border-radius:5px; overflow:hidden; }
+.led .stopfill { height:100%; border-radius:5px; background:var(--green); }
+.led .stopfill.up { background:var(--green); }
+.led .stopfill.warn { background:var(--amber); }
+.led .stopfill.down { background:var(--red); width:100% !important; }
+.led .stopinfo { font-family:var(--font-m); font-size:11px; color:var(--faint); white-space:nowrap; }
+.led .stophint { font-family:var(--font-m); font-size:11px; color:var(--faint); }
 .led .glancelist { display:flex; flex-direction:column; gap:2px; }
 .led .glance { display:grid; grid-template-columns:1fr auto auto; align-items:baseline; gap:12px; padding:9px 0; border-top:1px dashed var(--line); }
 .led .glance:first-child { border-top:0; }
@@ -379,7 +391,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V4.2</div>
+<div class="version">V4.3</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -824,7 +836,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const addRothContribution = (amount, date) => mutate((s) => { if (!s.roth) s.roth = { limit: 7500, contributions: [] }; if (!s.roth.contributions) s.roth.contributions = []; s.roth.contributions.push({ id: uid(), amount, date }); });
   const delRothContribution = (id) => mutate((s) => { if (!s.roth || !s.roth.contributions) return; s.roth.contributions = s.roth.contributions.filter((c) => c.id !== id); });
   const addHolding = (acctId, name, shares, price) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a) { if (!a.holdings) a.holdings = []; const buys = (toNum(shares) !== 0 || toNum(price) !== 0) ? [{ id: uid(), shares, price }] : []; const ticker = /^[A-Za-z.]{1,6}$/.test(name) ? name.toUpperCase() : ""; a.holdings.push({ id: uid(), name, ticker, price, buys }); } });
-  const editHolding = (acctId, hId, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) h[field] = value; } });
+  const editHolding = (acctId, hId, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) { h[field] = value; if (field === "price") { const p = toNum(value); if (p > toNum(h.peak)) h.peak = String(p); } } } });
   const delHolding = (acctId, hId) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) a.holdings = a.holdings.filter((y) => y.id !== hId); });
   const addBuy = (acctId, hId, shares, price, sell) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) { if (!h.buys) h.buys = []; h.buys.push({ id: uid(), shares, price, sell: !!sell }); } } });
   const editBuy = (acctId, hId, buyId, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h && h.buys) { const b = h.buys.find((z) => z.id === buyId); if (b) b[field] = value; } } });
@@ -845,7 +857,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
         if (d && typeof d.c === "number" && d.c > 0) { got[t.id] = d.c; ok++; } else { fail++; }
       } catch (e) { fail++; }
     }));
-    if (ok > 0) mutate((s) => { s.investing.accounts.forEach((a) => (a.holdings || []).forEach((h) => { if (got[h.id] != null) h.price = String(round2(got[h.id])); })); });
+    if (ok > 0) mutate((s) => { s.investing.accounts.forEach((a) => (a.holdings || []).forEach((h) => { if (got[h.id] != null) { const np = round2(got[h.id]); h.price = String(np); if (np > toNum(h.peak)) h.peak = String(np); } })); });
     const ts = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     setPriceStatus(ok ? ("Updated " + ok + " price" + (ok === 1 ? "" : "s") + (fail ? " · " + fail + " not found" : "") + " · " + ts) : "Couldn't fetch — check your key and tickers.");
   };
@@ -1521,6 +1533,14 @@ function HoldingCard({ account, h, onEditHolding, onDelHolding, onAddBuy, onEdit
   const [bSh, setBSh] = useState("");
   const [bPr, setBPr] = useState("");
   const logTxn = (sell) => { if (!bSh && !bPr) return; onAddBuy(account.id, h.id, bSh || "0", bPr || (h.price || "0"), sell); setBSh(""); setBPr(""); };
+  const price = toNum(h.price);
+  const stopPct = toNum(h.stopPct);
+  const peak = Math.max(toNum(h.peak), price);
+  const stopPrice = stopPct > 0 ? peak * (1 - stopPct / 100) : 0;
+  const cushion = (stopPct > 0 && price > 0) ? (price - stopPrice) / price * 100 : 0;
+  const stopHit = stopPct > 0 && price > 0 && price <= stopPrice;
+  const stopFill = stopPct > 0 ? Math.max(0, Math.min(100, cushion / stopPct * 100)) : 0;
+  const stopState = !stopPct ? "" : (stopHit ? "down" : (cushion < 1 ? "warn" : "up"));
   return (
     <div className="hold">
       <div className="holdtop">
@@ -1537,6 +1557,18 @@ function HoldingCard({ account, h, onEditHolding, onDelHolding, onAddBuy, onEdit
         <span className="holdsum num">{Math.round(shares * 1e4) / 1e4} sh · avg {usd(avg)}/sh{sold ? " · realized " + (realized >= 0 ? "+" : "−") + usd(Math.abs(realized)) : ""}</span>
         <button className="del" onClick={() => onDelHolding(account.id, h.id)} aria-label="Delete holding" title="Remove holding">×</button>
       </div>
+      {shares > 0.0000001 && (
+        <div className="stopline">
+          <span className="stoplab">Trailing stop</span>
+          <input className="stoppct" inputMode="decimal" value={h.stopPct || ""} placeholder="—" onChange={(e) => onEditHolding(account.id, h.id, "stopPct", e.target.value)} /><span className="stopsym">%</span>
+          {stopPct > 0 ? (
+            <React.Fragment>
+              <div className="stopbar"><div className={"stopfill " + stopState} style={{ width: stopFill + "%" }} /></div>
+              <span className="stopinfo num">high {usd(peak)} · stop {usd(stopPrice)} · {stopHit ? <span className="gl down">reached</span> : <span className={"gl " + (cushion < 1 ? "" : "up")} style={cushion < 1 ? { color: "var(--amber)" } : undefined}>{cushion.toFixed(1)}% above</span>}</span>
+            </React.Fragment>
+          ) : <span className="stophint">add a % (e.g. 3) to track how close you are</span>}
+        </div>
+      )}
       {buys.length > 0 && (
         <table className="ledgerT buylog">
           <thead><tr><th style={{ width: 42 }}></th><th>Shares</th><th className="r">Price / sh</th><th className="r">Amount</th><th style={{ width: 30 }}></th></tr></thead>
