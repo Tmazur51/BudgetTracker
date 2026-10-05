@@ -379,7 +379,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V3.17</div>
+<div class="version">V3.18</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -463,7 +463,7 @@ async function cloudSave(uid, state) {
 const usd = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n || 0);
 const usd0 = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n || 0);
 const uid = () => Math.random().toString(36).slice(2, 9);
-const sumAmt = (rows) => rows.reduce((a, r) => a + ((r.excluded || r.category === "Savings") ? 0 : toNum(r.amount)), 0);
+const sumAmt = (rows) => rows.reduce((a, r) => a + ((r.excluded || r.category === "Savings" || r.category === "Card payment") ? 0 : toNum(r.amount)), 0);
 function effectiveRows(m) {
   const groups = {};
   const income = [], expenses = [];
@@ -723,7 +723,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const goals = state.settings.goals;
   const investing = state.investing || { accounts: [] };
   const accounts = investing.accounts || [];
-  const spendCats = cats.filter((c) => c !== "Savings");
+  const spendCats = cats.filter((c) => c !== "Savings" && c !== "Card payment");
   const savedThisMonth = toNum(active.toSavings);
   const totalSaved = Object.values(state.months).reduce((a, m) => a + toNum(m.toSavings), 0);
   const acctVal = (a) => (a.type === "cash" || a.type === "credit") ? toNum(a.balance) : (a.holdings || []).reduce((t, h) => t + holdValue(h), 0);
@@ -739,6 +739,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const totalExpense = active.detailed ? sumAmt(activeEff.expenses) : active.summary.expense;
   const cardPayment = toNum(active.cardPayment);
   const checkingSpend = active.detailed ? splitSpend(activeEff.expenses).checking : totalExpense;
+  const onCardSpend = active.detailed ? activeEff.expenses.reduce((t, r) => t + ((!r.excluded && r.category !== "Savings" && r.category !== "Card payment" && r.card) ? toNum(r.amount) : 0), 0) : 0;
   const cashFlow = totalIncome - totalExpense;
   const endBal = active.detailed ? (toNum(active.startingBalance) + totalIncome - checkingSpend - savedThisMonth - cardPayment)
     : (active.endingBalance != null ? active.endingBalance : toNum(active.startingBalance) + cashFlow);
@@ -747,7 +748,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const actualByCat = {};
   cats.forEach((c) => (actualByCat[c] = 0));
   if (active.detailed) activeEff.expenses.forEach((r) => {
-    if (r.excluded || r.category === "Savings") return;
+    if (r.excluded || r.category === "Savings" || r.category === "Card payment") return;
     if (actualByCat[r.category] === undefined) actualByCat[r.category] = 0;
     actualByCat[r.category] += toNum(r.amount);
   });
@@ -920,7 +921,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
 
             <div className="stats">
               <div className="stat in"><div className="lab">Money in</div><div className="val num">{usd(totalIncome)}</div></div>
-              <div className="stat out"><div className="lab">Money out</div><div className="val num">{usd(totalExpense)}</div>{active.detailed && (totalExpense - checkingSpend) > 0.005 ? <div className="sub num">{usd(totalExpense - checkingSpend)} on card · {usd(checkingSpend)} from checking</div> : null}</div>
+              <div className="stat out"><div className="lab">Money out</div><div className="val num">{usd(totalExpense)}</div>{active.detailed && onCardSpend > 0.005 ? <div className="sub num">{usd(onCardSpend)} on card · {usd(Math.max(0, totalExpense - onCardSpend))} from checking</div> : null}</div>
               <div className={"stat flow " + (cashFlow >= 0 ? "pos" : "neg")}>
                 <div className="lab">Cash flow</div>
                 <div className={"val num " + (cashFlow >= 0 ? "pos" : "neg")}>{cashFlow >= 0 ? "+" : "−"}{usd(Math.abs(cashFlow))}</div>
@@ -956,7 +957,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
                 </div>
                 <div className="panel">
                   <div className="phead"><div className="t">Money out</div></div>
-                  <ExpenseTable rows={active.expenses} cats={spendCats} onEdit={editRow} onDel={delRow} onAdd={addExpense} total={totalExpense} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} />
+                  <ExpenseTable rows={active.expenses} cats={[...spendCats, "Card payment"]} onEdit={editRow} onDel={delRow} onAdd={addExpense} total={totalExpense} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} />
                 </div>
               </div>
             )}
@@ -977,7 +978,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
             )}
 
             {active.detailed && (
-              <div className="passhint"><b>💳 Credit card:</b> tap 💳 on anything you paid with your card. It still counts as spending, but it won't come out of your checking balance — because the cash doesn't leave until you pay the card. When you pay the bill (your Capital One lump on the 3rd), put that amount in the <b>card payment</b> box on the Ending balance card above: that's what actually leaves checking. Keep the card's <b>owed</b> balance updated on the Cash tab so your net worth stays right.</div>
+              <div className="passhint"><b>💳 Credit card:</b> tap 💳 on anything you paid with your card. It still counts as spending, but it won't come out of your checking balance — because the cash doesn't leave until you pay the card. When you pay the bill (your Capital One lump on the 3rd), log it as an expense with the category <b>Card payment</b> — that comes out of checking but doesn't count as spending or toward your goals (it's just clearing debt). You can instead use the <b>card payment</b> box on the Ending balance card; either way works, just not both for the same payment. Keep the card's <b>owed</b> balance updated on the Cash tab so your net worth stays right.</div>
             )}
 
             {active.detailed && (
@@ -1094,7 +1095,7 @@ function ExpenseTable({ rows, cats, onEdit, onDel, onAdd, total, onLink, linkPen
   const [cat, setCat] = useState("Misc");
   const [newCard, setNewCard] = useState(false);
   const commit = () => { if (!name.trim() && !amt) return; onAdd(name.trim() || "Expense", amt || "0", cat, newCard); setName(""); setAmt(""); };
-  const onCard = rows.reduce((t, r) => t + ((!r.excluded && r.category !== "Savings" && r.card) ? toNum(r.amount) : 0), 0);
+  const onCard = rows.reduce((t, r) => t + ((!r.excluded && r.category !== "Savings" && r.category !== "Card payment" && r.card) ? toNum(r.amount) : 0), 0);
   return (
     <React.Fragment>
       {rows.length === 0 ? (<div className="empty">No expenses logged yet. Add one below and pick its category.</div>) : (
@@ -1404,7 +1405,7 @@ function OverviewPage({ months, cats, hysaTotal, investTotal, rothValue, netWort
   cats.forEach((c) => (catTotals[c] = 0));
   keys.forEach((k) => {
     const m = months[k];
-    if (m.detailed) effByKey[k].expenses.forEach((r) => { if (!r.excluded) catTotals[r.category] = (catTotals[r.category] || 0) + toNum(r.amount); });
+    if (m.detailed) effByKey[k].expenses.forEach((r) => { if (!r.excluded && r.category !== "Card payment" && r.category !== "Savings") catTotals[r.category] = (catTotals[r.category] || 0) + toNum(r.amount); });
   });
   const catList = cats.filter((c) => c !== "Savings").map((c) => ({ c, v: catTotals[c] || 0 })).sort((a, b) => b.v - a.v);
   const catMax = Math.max(1, ...catList.map((x) => x.v));
