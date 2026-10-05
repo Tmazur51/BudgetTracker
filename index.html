@@ -330,6 +330,9 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 .led .lnk.on { color:#fff; background:var(--brand); border-color:var(--brand); font-weight:700; }
 .led .lnk.pend { border-color:var(--brand); background:var(--brand-tint); color:var(--brand); font-weight:700; box-shadow:0 0 0 3px var(--brand-tint); }
 .led .netno { display:inline-grid; place-items:center; width:20px; height:20px; border-radius:6px; background:var(--brand); color:#fff; font-family:var(--font-m); font-size:11px; font-weight:700; flex:none; }
+.led .cardbtn { border:1px solid var(--line-2); background:#fff; border-radius:7px; width:30px; height:28px; font-size:12px; line-height:1; padding:0; cursor:pointer; opacity:.4; filter:grayscale(1); }
+.led .cardbtn:hover { border-color:var(--amber); opacity:.8; filter:grayscale(0); }
+.led .cardbtn.on { opacity:1; filter:grayscale(0); background:var(--amber-tint); border-color:var(--amber); }
 .led .netlist { display:flex; flex-direction:column; gap:11px; }
 .led .netrow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .led .netdot { width:9px; height:9px; border-radius:3px; flex:none; }
@@ -373,7 +376,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V3.14</div>
+<div class="version">V3.15</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -463,20 +466,30 @@ function effectiveRows(m) {
   const income = [], expenses = [];
   (m.income || []).forEach((r) => {
     if (r.excluded) { income.push(r); return; }
-    if (r.link) { const g = groups[r.link] || (groups[r.link] = { inc: 0, exp: 0, cat: null }); g.inc += toNum(r.amount); }
+    if (r.link) { const g = groups[r.link] || (groups[r.link] = { inc: 0, exp: 0, cat: null, card: false }); g.inc += toNum(r.amount); }
     else income.push(r);
   });
   (m.expenses || []).forEach((r) => {
     if (r.excluded) { expenses.push(r); return; }
-    if (r.link) { const g = groups[r.link] || (groups[r.link] = { inc: 0, exp: 0, cat: null }); g.exp += toNum(r.amount); if (r.category && r.category !== "Savings" && !g.cat) g.cat = r.category; }
+    if (r.link) { const g = groups[r.link] || (groups[r.link] = { inc: 0, exp: 0, cat: null, card: false }); g.exp += toNum(r.amount); if (r.card) g.card = true; if (r.category && r.category !== "Savings" && !g.cat) g.cat = r.category; }
     else expenses.push(r);
   });
   Object.keys(groups).forEach((id) => {
     const g = groups[id], net = g.exp - g.inc;
-    if (net > 0.005) expenses.push({ id: "net_" + id, name: "net (linked)", amount: net, category: g.cat || "Misc", excluded: false });
+    if (net > 0.005) expenses.push({ id: "net_" + id, name: "net (linked)", amount: net, category: g.cat || "Misc", excluded: false, card: !!g.card });
     else if (net < -0.005) income.push({ id: "net_" + id, source: "net (linked)", amount: -net, excluded: false });
   });
   return { income, expenses };
+}
+function splitSpend(rows) {
+  let budget = 0, checking = 0;
+  rows.forEach((r) => {
+    if (r.excluded || r.category === "Savings") return;
+    const amt = toNum(r.amount);
+    budget += amt;
+    if (!r.card) checking += amt;
+  });
+  return { budget, checking };
 }
 const fmtDate = (d) => { const p = String(d || "").split("-"); if (p.length !== 3) return d || ""; return MONTH_NAMES[+p[1] - 1].slice(0, 3) + " " + (+p[2]); };
 const toNum = (s) => { const v = parseFloat(String(s).replace(/[^0-9.\-]/g, "")); return isNaN(v) ? 0 : v; };
@@ -705,20 +718,23 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const spendCats = cats.filter((c) => c !== "Savings");
   const savedThisMonth = toNum(active.toSavings);
   const totalSaved = Object.values(state.months).reduce((a, m) => a + toNum(m.toSavings), 0);
-  const acctVal = (a) => a.type === "cash" ? toNum(a.balance) : (a.holdings || []).reduce((t, h) => t + holdValue(h), 0);
+  const acctVal = (a) => (a.type === "cash" || a.type === "credit") ? toNum(a.balance) : (a.holdings || []).reduce((t, h) => t + holdValue(h), 0);
   const hysaTotal = accounts.filter((a) => a.type === "cash").reduce((s, a) => s + acctVal(a), 0);
   const investTotal = accounts.filter((a) => a.type === "investment").reduce((s, a) => s + acctVal(a), 0);
   const rothValue = accounts.filter((a) => a.type === "roth").reduce((s, a) => s + acctVal(a), 0);
+  const creditOwed = accounts.filter((a) => a.type === "credit").reduce((s, a) => s + acctVal(a), 0);
   const savingsCombined = hysaTotal + investTotal;
   const roth = state.roth || { limit: 7500, contributions: [] };
 
   const activeEff = active.detailed ? effectiveRows(active) : null;
   const totalIncome = active.detailed ? sumAmt(activeEff.income) : active.summary.income;
   const totalExpense = active.detailed ? sumAmt(activeEff.expenses) : active.summary.expense;
+  const cardPayment = toNum(active.cardPayment);
+  const checkingSpend = active.detailed ? splitSpend(activeEff.expenses).checking : totalExpense;
   const cashFlow = totalIncome - totalExpense;
-  const endBal = active.detailed ? (toNum(active.startingBalance) + cashFlow - savedThisMonth)
+  const endBal = active.detailed ? (toNum(active.startingBalance) + totalIncome - checkingSpend - savedThisMonth - cardPayment)
     : (active.endingBalance != null ? active.endingBalance : toNum(active.startingBalance) + cashFlow);
-  const netWorthNow = hysaTotal + investTotal + rothValue + endBal;
+  const netWorthNow = hysaTotal + investTotal + rothValue + endBal - creditOwed;
 
   const actualByCat = {};
   cats.forEach((c) => (actualByCat[c] = 0));
@@ -752,7 +768,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
     }
   });
   const addIncome = (source, amount) => mutate((s) => { s.months[s.activeMonth].income.push({ id: uid(), source, amount }); });
-  const addExpense = (name, amount, category) => mutate((s) => { s.months[s.activeMonth].expenses.push({ id: uid(), name, amount, category }); });
+  const addExpense = (name, amount, category, card) => mutate((s) => { s.months[s.activeMonth].expenses.push({ id: uid(), name, amount, category, card: !!card }); });
   const editRow = (list, id, field, value) => mutate((s) => { const row = s.months[s.activeMonth][list].find((r) => r.id === id); if (row) row[field] = value; });
   const delRow = (list, id) => mutate((s) => { const m = s.months[s.activeMonth]; m[list] = m[list].filter((r) => r.id !== id); });
   const toggleLink = (kind, id) => {
@@ -793,6 +809,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const editAccount = (id, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === id); if (a) a[field] = value; });
   const delAccount = (id) => mutate((s) => { s.investing.accounts = s.investing.accounts.filter((x) => x.id !== id); });
   const setToSavings = (v) => mutate((s) => { s.months[s.activeMonth].toSavings = v; });
+  const setCardPayment = (v) => mutate((s) => { s.months[s.activeMonth].cardPayment = v; });
   const captureNetWorth = () => mutate((s) => { const m = s.months[s.activeMonth]; m.netWorth = Math.round(netWorthNow * 100) / 100; m.investValue = Math.round(investTotal * 100) / 100; });
   const setRothLimit = (v) => mutate((s) => { if (!s.roth) s.roth = { limit: 7500, contributions: [] }; s.roth.limit = v; });
   const addRothContribution = (amount, date) => mutate((s) => { if (!s.roth) s.roth = { limit: 7500, contributions: [] }; if (!s.roth.contributions) s.roth.contributions = []; s.roth.contributions.push({ id: uid(), amount, date }); });
@@ -904,7 +921,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
                 <div className="lab">Ending balance</div>
                 <div className="val num">{usd(endBal)}</div>
                 {active.detailed
-                  ? <div className="sub">from <input className="startedit" inputMode="decimal" value={active.startingBalance} onChange={(e) => setStart(e.target.value)} /> start · <input className="startedit" inputMode="decimal" value={active.toSavings || ""} placeholder="0" onChange={(e) => setToSavings(e.target.value)} /> to savings</div>
+                  ? <div className="sub">from <input className="startedit" inputMode="decimal" value={active.startingBalance} onChange={(e) => setStart(e.target.value)} /> start · <input className="startedit" inputMode="decimal" value={active.toSavings || ""} placeholder="0" onChange={(e) => setToSavings(e.target.value)} /> to savings · <input className="startedit" inputMode="decimal" value={active.cardPayment || ""} placeholder="0" onChange={(e) => setCardPayment(e.target.value)} /> card payment</div>
                   : <div className="sub num">from {usd(toNum(active.startingBalance))} start</div>}
               </div>
             </div>
@@ -952,13 +969,17 @@ function BudgetLedger({ mode, session, onSignOut }) {
             )}
 
             {active.detailed && (
-              <div className="passhint">Two ways to handle money that isn't really spending. The <b>↔</b> button drops a single row out entirely (a pure pass-through). The <b>🔗</b> button <b>links</b> a reimbursement to its expense so they net out — tap 🔗 on the expense, then 🔗 on the repayment. Equal amounts cancel; if they differ, only the difference counts (shown in the net-outs box). Good for rent your dad pays back, or a utility bill you split.</div>
+              <div className="passhint"><b>💳 Credit card:</b> tap 💳 on anything you paid with your card. It still counts as spending, but it won't come out of your checking balance — because the cash doesn't leave until you pay the card. When you pay the bill (your Capital One lump on the 3rd), put that amount in the <b>card payment</b> box on the Ending balance card above: that's what actually leaves checking. Keep the card's <b>owed</b> balance updated on the Cash tab so your net worth stays right.</div>
+            )}
+
+            {active.detailed && (
+              <div className="passhint">Money that isn't spending: the <b>↔</b> button drops a row out entirely (a pure pass-through). The <b>🔗</b> button <b>links</b> a reimbursement to its expense so they net — tap 🔗 on the expense, then 🔗 on the repayment. Equal amounts cancel; if they differ, only the difference counts (shown in the net-outs box).</div>
             )}
           </React.Fragment>
         )}
 
         {page === "overview" && (
-          <OverviewPage months={state.months} cats={cats} hysaTotal={hysaTotal} investTotal={investTotal} rothValue={rothValue} netWorthNow={netWorthNow} activeLabel={active.label} onCapture={captureNetWorth} onOpenMonth={(k) => { setActive(k); setPage("log"); }} goals={goals} spendCats={spendCats} monthIncome={totalIncome} actualByCat={actualByCat} detailed={active.detailed} />
+          <OverviewPage months={state.months} cats={cats} hysaTotal={hysaTotal} investTotal={investTotal} rothValue={rothValue} netWorthNow={netWorthNow} creditOwed={creditOwed} activeLabel={active.label} onCapture={captureNetWorth} onOpenMonth={(k) => { setActive(k); setPage("log"); }} goals={goals} spendCats={spendCats} monthIncome={totalIncome} actualByCat={actualByCat} detailed={active.detailed} />
         )}
 
         {page === "roth" && (
@@ -1063,12 +1084,14 @@ function ExpenseTable({ rows, cats, onEdit, onDel, onAdd, total, onLink, linkPen
   const [name, setName] = useState("");
   const [amt, setAmt] = useState("");
   const [cat, setCat] = useState("Misc");
-  const commit = () => { if (!name.trim() && !amt) return; onAdd(name.trim() || "Expense", amt || "0", cat); setName(""); setAmt(""); };
+  const [newCard, setNewCard] = useState(false);
+  const commit = () => { if (!name.trim() && !amt) return; onAdd(name.trim() || "Expense", amt || "0", cat, newCard); setName(""); setAmt(""); };
+  const onCard = rows.reduce((t, r) => t + ((!r.excluded && r.category !== "Savings" && r.card) ? toNum(r.amount) : 0), 0);
   return (
     <React.Fragment>
       {rows.length === 0 ? (<div className="empty">No expenses logged yet. Add one below and pick its category.</div>) : (
         <table className="ledgerT">
-          <thead><tr><th>Item</th><th className="r">Amount</th><th>Category</th><th style={{ width: 34 }}></th><th style={{ width: 34 }}></th><th style={{ width: 34 }}></th></tr></thead>
+          <thead><tr><th>Item</th><th className="r">Amount</th><th>Category</th><th style={{ width: 30 }}></th><th style={{ width: 30 }}></th><th style={{ width: 30 }}></th><th style={{ width: 30 }}></th></tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} className={r.excluded ? "excluded" : ""}>
@@ -1080,6 +1103,7 @@ function ExpenseTable({ rows, cats, onEdit, onDel, onAdd, total, onLink, linkPen
                     {!cats.includes(r.category) && <option value={r.category}>{r.category}</option>}
                   </select>
                 </td>
+                <td><button className={"cardbtn" + (r.card ? " on" : "")} onClick={() => onEdit("expenses", r.id, "card", !r.card)} title={r.card ? "On credit card — doesn't reduce checking. Tap to make it debit." : "Mark as paid on your credit card"} aria-label="Toggle on card">💳</button></td>
                 <td><button className={"lnk" + (r.link ? " on" : "") + (linkPend && linkPend.kind === "expenses" && linkPend.id === r.id ? " pend" : "")} onClick={() => onLink("expenses", r.id)} title={r.link ? "Linked pair " + linkNum(r.link) + " — tap to unlink" : (linkPend ? "Tap to link these two together" : "Link with a reimbursement so they net out")} aria-label="Link rows">{r.link ? linkNum(r.link) : ((linkPend && linkPend.kind === "expenses" && linkPend.id === r.id) ? pendNum : "🔗")}</button></td>
                 <td><button className={"excl" + (r.excluded ? " on" : "")} onClick={() => onEdit("expenses", r.id, "excluded", !r.excluded)} title={r.excluded ? "Excluded from budget — tap to include" : "Exclude from budget (reimbursement / transfer)"} aria-label="Toggle exclude from budget">↔</button></td>
                 <td><button className="del" onClick={() => onDel("expenses", r.id)} aria-label="Delete">×</button></td>
@@ -1092,9 +1116,10 @@ function ExpenseTable({ rows, cats, onEdit, onDel, onAdd, total, onLink, linkPen
         <input className="fname" placeholder="Item (e.g. Groceries)" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
         <input className="famt" placeholder="0.00" inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
         <select className="fcat" value={cat} onChange={(e) => setCat(e.target.value)}>{cats.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+        <button className={"cardbtn addc" + (newCard ? " on" : "")} onClick={() => setNewCard(!newCard)} title={newCard ? "New items go on the card — tap for debit" : "Put new items on the card"} aria-label="New item on card">💳</button>
         <button className="btn primary small" onClick={commit}>Add</button>
       </div>
-      <div className="subtotal"><span className="l">Total out</span><span className="v num">{usd(total)}</span></div>
+      <div className="subtotal"><span className="l">Total out{onCard > 0.005 ? " · " + usd(onCard) + " on card" : ""}</span><span className="v num">{usd(total)}</span></div>
     </React.Fragment>
   );
 }
@@ -1321,7 +1346,7 @@ function HistoryChart({ points, color, areaFill, emptyMsg }) {
   );
 }
 
-function OverviewPage({ months, cats, hysaTotal, investTotal, rothValue, netWorthNow, activeLabel, onCapture, onOpenMonth, goals, spendCats, monthIncome, actualByCat, detailed }) {
+function OverviewPage({ months, cats, hysaTotal, investTotal, rothValue, netWorthNow, creditOwed, activeLabel, onCapture, onOpenMonth, goals, spendCats, monthIncome, actualByCat, detailed }) {
   const G = goals || {}, AC = actualByCat || {};
   const ltsRows = (detailed && (monthIncome || 0) > 0)
     ? (spendCats || []).filter((c) => (G[c] || 0) > 0).map((c) => { const target = (G[c] || 0) * monthIncome; const spent = AC[c] || 0; return { c, target, spent, left: target - spent }; }).sort((a, b) => a.left - b.left)
@@ -1346,12 +1371,14 @@ function OverviewPage({ months, cats, hysaTotal, investTotal, rothValue, netWort
     avgPctByCat[c] = cntT ? Math.round((sumT / cntT) * 100) : null;
     avgIncPctByCat[c] = cntI ? Math.round((sumI / cntI) * 100) : null;
   });
+  const owed = creditOwed || 0;
   const nwParts = [
-    { k: "Checking", v: netWorthNow - hysaTotal - investTotal - rothValue },
+    { k: "Checking", v: netWorthNow + owed - hysaTotal - investTotal - rothValue },
     { k: "HYSA & cash", v: hysaTotal },
     { k: "Investments", v: investTotal },
     { k: "Roth", v: rothValue },
   ].filter((p) => p.v > 0.005).sort((a, b) => b.v - a.v);
+  const assetTotal = nwParts.reduce((t, p) => t + p.v, 0);
   const rows = keys.map((k) => {
     const m = months[k];
     const eff = effByKey[k];
@@ -1386,17 +1413,24 @@ function OverviewPage({ months, cats, hysaTotal, investTotal, rothValue, netWort
         <div className={"tile " + (avgNet >= 0 ? "pos" : "neg")}><div className="tlab">Avg cash flow / mo</div><div className={"tval num " + (avgNet >= 0 ? "pos" : "neg")}>{avgNet >= 0 ? "+" : "−"}{usd0(Math.abs(avgNet))}</div></div>
       </div>
 
-      {netWorthNow > 0 && nwParts.length > 0 && (
+      {assetTotal > 0 && (
         <div className="panel">
-          <div className="phead"><div className="t">What's in your net worth</div><div className="hint">share of your {usd0(netWorthNow)}</div></div>
+          <div className="phead"><div className="t">What's in your net worth</div><div className="hint">net worth {usd0(netWorthNow)}{owed > 0.005 ? " · after −" + usd0(owed) + " card debt" : ""}</div></div>
           <div className="alloclist">
-            {nwParts.map((p) => { const pct = p.v / netWorthNow * 100; return (
+            {nwParts.map((p) => { const pct = p.v / assetTotal * 100; return (
               <div className="alloc" key={p.k}>
                 <div className="allochead"><span className="aname">{p.k}</span><span className="apct num">{pct.toFixed(1)}%</span></div>
                 <div className="allotrack"><div className="allofill" style={{ width: Math.min(pct, 100) + "%" }} /></div>
                 <div className="aval num">{usd0(p.v)}</div>
               </div>
             ); })}
+            {owed > 0.005 && (
+              <div className="alloc">
+                <div className="allochead"><span className="aname">Credit card</span><span className="apct num" style={{ color: "var(--red)" }}>owed</span></div>
+                <div className="allotrack"><div className="allofill" style={{ width: Math.min(owed / assetTotal * 100, 100) + "%", background: "var(--red)" }} /></div>
+                <div className="aval num" style={{ color: "var(--red)" }}>−{usd0(owed)}</div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1505,7 +1539,8 @@ function HoldingCard({ account, h, onEditHolding, onDelHolding, onAddBuy, onEdit
 }
 
 function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDelHolding, onAddBuy, onEditBuy, onDelBuy }) {
-  const isInv = account.type !== "cash";
+  const isInv = account.type === "investment" || account.type === "roth";
+  const isCredit = account.type === "credit";
   const holds = account.holdings || [];
   const invested = holds.reduce((a, h) => a + holdCost(h), 0);
   const value = isInv ? holds.reduce((a, h) => a + holdValue(h), 0) : toNum(account.balance);
@@ -1527,8 +1562,9 @@ function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDe
           <option value="cash">Cash / HYSA</option>
           <option value="investment">Investments</option>
           <option value="roth">Roth</option>
+          <option value="credit">Credit card</option>
         </select>
-        <div className="acctVal num">{usd(value)}</div>
+        <div className={"acctVal num" + (isCredit && value > 0 ? " neg" : "")}>{isCredit && value > 0 ? "−" : ""}{usd(value)}</div>
         <button className="del" onClick={() => onDel(account.id)} aria-label="Delete account">×</button>
       </div>
       {open && (isInv ? (
@@ -1551,11 +1587,18 @@ function AccountCard({ account, onEdit, onDel, onAddHolding, onEditHolding, onDe
           )}
         </div>
       ) : (
-        <div className="acctBody cashBody">
-          <div className="cashField"><span>Balance</span><input inputMode="decimal" value={account.balance || ""} onChange={(e) => onEdit(account.id, "balance", e.target.value)} /></div>
-          <div className="cashField"><span>APY %</span><input inputMode="decimal" value={account.apy || ""} onChange={(e) => onEdit(account.id, "apy", e.target.value)} /></div>
-          <div className="cashNote">{toNum(account.apy) > 0 && toNum(account.balance) > 0 ? "≈ " + usd0(toNum(account.balance) * toNum(account.apy) / 100) + " / yr in interest" : ""}</div>
-        </div>
+        isCredit ? (
+          <div className="acctBody cashBody">
+            <div className="cashField"><span>Owed</span><input inputMode="decimal" value={account.balance || ""} onChange={(e) => onEdit(account.id, "balance", e.target.value)} /></div>
+            <div className="cashNote">What you currently owe on this card — subtracted from your net worth. Keep it synced to your card's balance.</div>
+          </div>
+        ) : (
+          <div className="acctBody cashBody">
+            <div className="cashField"><span>Balance</span><input inputMode="decimal" value={account.balance || ""} onChange={(e) => onEdit(account.id, "balance", e.target.value)} /></div>
+            <div className="cashField"><span>APY %</span><input inputMode="decimal" value={account.apy || ""} onChange={(e) => onEdit(account.id, "apy", e.target.value)} /></div>
+            <div className="cashNote">{toNum(account.apy) > 0 && toNum(account.balance) > 0 ? "≈ " + usd0(toNum(account.balance) * toNum(account.apy) / 100) + " / yr in interest" : ""}</div>
+          </div>
+        )
       ))}
     </div>
   );
@@ -1583,17 +1626,24 @@ function AccountList({ list, defaultType, addPlaceholder, emptyText, onAddAccoun
 
 function HysaPage(props) {
   const list = (props.accounts || []).filter((a) => a.type === "cash");
+  const cards = (props.accounts || []).filter((a) => a.type === "credit");
   const total = list.reduce((s, a) => s + toNum(a.balance), 0);
   const interest = list.reduce((s, a) => s + toNum(a.balance) * toNum(a.apy) / 100, 0);
+  const owed = cards.reduce((s, a) => s + toNum(a.balance), 0);
   return (
     <React.Fragment>
       <div className="tiles">
         <div className="tile brand"><div className="tlab">HYSA &amp; cash</div><div className="tval num brand">{usd(total)}</div></div>
         <div className="tile"><div className="tlab">Est. interest / yr</div><div className="tval num">{usd0(interest)}</div><div className="tsub">at current balances &amp; APYs</div></div>
+        {owed > 0 && <div className="tile neg"><div className="tlab">Credit owed</div><div className="tval num neg">−{usd(owed)}</div><div className="tsub">across your cards</div></div>}
       </div>
       <div className="panel">
         <div className="phead"><div className="t">Cash &amp; savings accounts</div><div className="hint">balances and APY — update to match your statements</div></div>
         <AccountList list={list} defaultType="cash" addPlaceholder="Account (e.g. Wealthfront HYSA)" emptyText="No cash accounts yet — add your Wealthfront HYSA or any savings account below." {...props} />
+      </div>
+      <div className="panel">
+        <div className="phead"><div className="t">Credit cards</div><div className="hint">what you owe — subtracted from net worth</div></div>
+        <AccountList list={cards} defaultType="credit" addPlaceholder="Card (e.g. Capital One)" emptyText="No credit cards yet — add your Capital One card below and keep its owed balance in sync." {...props} />
       </div>
     </React.Fragment>
   );
@@ -1743,7 +1793,7 @@ function MonthsModal({ existing, activeKey, onClose, onSelect, onDelete, onCreat
   const lastEff = lastKey && existing[lastKey].detailed ? effectiveRows(existing[lastKey]) : null;
   const lastEnd = lastKey
     ? (existing[lastKey].detailed
-        ? toNum(existing[lastKey].startingBalance) + sumAmt(lastEff.income) - sumAmt(lastEff.expenses)
+        ? toNum(existing[lastKey].startingBalance) + sumAmt(lastEff.income) - splitSpend(lastEff.expenses).checking - toNum(existing[lastKey].toSavings) - toNum(existing[lastKey].cardPayment)
         : (existing[lastKey].endingBalance != null ? existing[lastKey].endingBalance : 0))
     : 0;
   const now = new Date();
