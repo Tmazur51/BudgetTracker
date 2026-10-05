@@ -294,6 +294,9 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 .led .buylog { margin:2px 0 4px; }
 .led .buylog th { font-size:9.5px; }
 .led .buylog td { padding:2px 8px 2px 0; }
+.led .txntag { display:inline-block; font-family:var(--font-m); font-size:9px; font-weight:700; letter-spacing:.06em; padding:2px 5px; border-radius:5px; }
+.led .txntag.buy { background:var(--brand-tint); color:var(--brand); }
+.led .txntag.sell { background:var(--green-tint); color:var(--green); }
 .led .glancelist { display:flex; flex-direction:column; gap:2px; }
 .led .glance { display:grid; grid-template-columns:1fr auto auto; align-items:baseline; gap:12px; padding:9px 0; border-top:1px dashed var(--line); }
 .led .glance:first-child { border-top:0; }
@@ -376,7 +379,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V3.15</div>
+<div class="version">V3.16</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -494,9 +497,14 @@ function splitSpend(rows) {
 const fmtDate = (d) => { const p = String(d || "").split("-"); if (p.length !== 3) return d || ""; return MONTH_NAMES[+p[1] - 1].slice(0, 3) + " " + (+p[2]); };
 const toNum = (s) => { const v = parseFloat(String(s).replace(/[^0-9.\-]/g, "")); return isNaN(v) ? 0 : v; };
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
-const holdShares = (h) => (h.buys || []).reduce((t, b) => t + toNum(b.shares), 0);
-const holdCost = (h) => (h.buys || []).reduce((t, b) => t + toNum(b.shares) * toNum(b.price), 0);
+const holdBuyShares = (h) => (h.buys || []).reduce((t, b) => t + (b.sell ? 0 : toNum(b.shares)), 0);
+const holdBuyCost = (h) => (h.buys || []).reduce((t, b) => t + (b.sell ? 0 : toNum(b.shares) * toNum(b.price)), 0);
+const holdSellShares = (h) => (h.buys || []).reduce((t, b) => t + (b.sell ? toNum(b.shares) : 0), 0);
+const holdAvgCost = (h) => { const bs = holdBuyShares(h); return bs > 0 ? holdBuyCost(h) / bs : 0; };
+const holdShares = (h) => holdBuyShares(h) - holdSellShares(h);
+const holdCost = (h) => holdShares(h) * holdAvgCost(h);
 const holdValue = (h) => holdShares(h) * toNum(h.price);
+const holdRealized = (h) => { const avg = holdAvgCost(h); return (h.buys || []).reduce((t, b) => t + (b.sell ? toNum(b.shares) * (toNum(b.price) - avg) : 0), 0); };
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function exportData(state) {
@@ -527,7 +535,7 @@ function migrate(s) {
         let price = "", buys = [];
         if (Array.isArray(h.buys)) {
           price = h.price != null ? String(h.price) : "";
-          buys = h.buys.map((b) => ({ id: b.id || uid(), shares: b.shares != null ? String(b.shares) : "", price: b.price != null ? String(b.price) : "" }));
+          buys = h.buys.map((b) => ({ id: b.id || uid(), shares: b.shares != null ? String(b.shares) : "", price: b.price != null ? String(b.price) : "", sell: !!b.sell }));
         } else if (h.shares !== undefined || h.paid !== undefined) {
           price = h.price != null ? String(h.price) : (h.paid != null ? String(h.paid) : "");
           if (toNum(h.shares) !== 0 || toNum(h.paid) !== 0) buys = [{ id: uid(), shares: String(h.shares != null ? h.shares : "0"), price: String(h.paid != null ? h.paid : "0") }];
@@ -817,7 +825,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const addHolding = (acctId, name, shares, price) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a) { if (!a.holdings) a.holdings = []; const buys = (toNum(shares) !== 0 || toNum(price) !== 0) ? [{ id: uid(), shares, price }] : []; const ticker = /^[A-Za-z.]{1,6}$/.test(name) ? name.toUpperCase() : ""; a.holdings.push({ id: uid(), name, ticker, price, buys }); } });
   const editHolding = (acctId, hId, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) h[field] = value; } });
   const delHolding = (acctId, hId) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) a.holdings = a.holdings.filter((y) => y.id !== hId); });
-  const addBuy = (acctId, hId, shares, price) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) { if (!h.buys) h.buys = []; h.buys.push({ id: uid(), shares, price }); } } });
+  const addBuy = (acctId, hId, shares, price, sell) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h) { if (!h.buys) h.buys = []; h.buys.push({ id: uid(), shares, price, sell: !!sell }); } } });
   const editBuy = (acctId, hId, buyId, field, value) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h && h.buys) { const b = h.buys.find((z) => z.id === buyId); if (b) b[field] = value; } } });
   const delBuy = (acctId, hId, buyId) => mutate((s) => { const a = s.investing.accounts.find((x) => x.id === acctId); if (a && a.holdings) { const h = a.holdings.find((y) => y.id === hId); if (h && h.buys) h.buys = h.buys.filter((z) => z.id !== buyId); } });
   const setFinnhubKey = (v) => mutate((s) => { s.settings.finnhubKey = v; });
@@ -1493,11 +1501,13 @@ function OverviewPage({ months, cats, hysaTotal, investTotal, rothValue, netWort
 
 function HoldingCard({ account, h, onEditHolding, onDelHolding, onAddBuy, onEditBuy, onDelBuy }) {
   const shares = holdShares(h), cost = holdCost(h), val = holdValue(h), g = val - cost, p = cost > 0 ? g / cost * 100 : 0;
-  const avg = shares > 0 ? cost / shares : 0;
+  const avg = holdAvgCost(h);
+  const realized = holdRealized(h);
+  const sold = holdSellShares(h) > 0;
   const buys = h.buys || [];
   const [bSh, setBSh] = useState("");
   const [bPr, setBPr] = useState("");
-  const logBuy = () => { if (!bSh && !bPr) return; onAddBuy(account.id, h.id, bSh || "0", bPr || (h.price || "0")); setBSh(""); setBPr(""); };
+  const logTxn = (sell) => { if (!bSh && !bPr) return; onAddBuy(account.id, h.id, bSh || "0", bPr || (h.price || "0"), sell); setBSh(""); setBPr(""); };
   return (
     <div className="hold">
       <div className="holdtop">
@@ -1511,28 +1521,30 @@ function HoldingCard({ account, h, onEditHolding, onDelHolding, onAddBuy, onEdit
         <label className="hf"><span>Ticker</span><input value={h.ticker || ""} placeholder="VOO" style={{ width: 66, textTransform: "uppercase" }} onChange={(e) => onEditHolding(account.id, h.id, "ticker", e.target.value)} /></label>
         <label className="hf"><span>Group</span><input value={h.group || ""} placeholder="—" style={{ width: 80 }} onChange={(e) => onEditHolding(account.id, h.id, "group", e.target.value)} /></label>
         <label className="hf"><span>Price now / sh</span><input inputMode="decimal" value={h.price} onChange={(e) => onEditHolding(account.id, h.id, "price", e.target.value)} /></label>
-        <span className="holdsum num">{Math.round(shares * 1e4) / 1e4} sh · avg {usd(avg)}/sh</span>
+        <span className="holdsum num">{Math.round(shares * 1e4) / 1e4} sh · avg {usd(avg)}/sh{sold ? " · realized " + (realized >= 0 ? "+" : "−") + usd(Math.abs(realized)) : ""}</span>
         <button className="del" onClick={() => onDelHolding(account.id, h.id)} aria-label="Delete holding" title="Remove holding">×</button>
       </div>
       {buys.length > 0 && (
         <table className="ledgerT buylog">
-          <thead><tr><th>Bought (sh)</th><th className="r">Price / sh</th><th className="r">Cost</th><th style={{ width: 30 }}></th></tr></thead>
+          <thead><tr><th style={{ width: 42 }}></th><th>Shares</th><th className="r">Price / sh</th><th className="r">Amount</th><th style={{ width: 30 }}></th></tr></thead>
           <tbody>
             {buys.map((b) => (
-              <tr key={b.id}>
+              <tr key={b.id} className={b.sell ? "sellrow" : ""}>
+                <td><span className={"txntag " + (b.sell ? "sell" : "buy")}>{b.sell ? "SELL" : "BUY"}</span></td>
                 <td><input className="cell" inputMode="decimal" value={b.shares} onChange={(e) => onEditBuy(account.id, h.id, b.id, "shares", e.target.value)} /></td>
                 <td className="r"><input className="cell amt" inputMode="decimal" value={b.price} onChange={(e) => onEditBuy(account.id, h.id, b.id, "price", e.target.value)} /></td>
-                <td className="r"><span className="num" style={{ fontSize: "12px", color: "var(--ink-soft)" }}>{usd(toNum(b.shares) * toNum(b.price))}</span></td>
-                <td><button className="del" onClick={() => onDelBuy(account.id, h.id, b.id)} aria-label="Delete buy">×</button></td>
+                <td className="r"><span className={"num" + (b.sell ? " pos" : "")} style={{ fontSize: "12px", color: b.sell ? undefined : "var(--ink-soft)" }}>{b.sell ? "+" : ""}{usd(toNum(b.shares) * toNum(b.price))}</span></td>
+                <td><button className="del" onClick={() => onDelBuy(account.id, h.id, b.id)} aria-label="Delete entry">×</button></td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
       <div className="addrow">
-        <input className="fname" placeholder="Shares bought" inputMode="decimal" value={bSh} onChange={(e) => setBSh(e.target.value)} onKeyDown={(e) => e.key === "Enter" && logBuy()} />
-        <input className="famt" placeholder="Price / sh" inputMode="decimal" value={bPr} onChange={(e) => setBPr(e.target.value)} onKeyDown={(e) => e.key === "Enter" && logBuy()} />
-        <button className="btn primary small" onClick={logBuy}>Log buy</button>
+        <input className="fname" placeholder="Shares" inputMode="decimal" value={bSh} onChange={(e) => setBSh(e.target.value)} onKeyDown={(e) => e.key === "Enter" && logTxn(false)} />
+        <input className="famt" placeholder="Price / sh" inputMode="decimal" value={bPr} onChange={(e) => setBPr(e.target.value)} onKeyDown={(e) => e.key === "Enter" && logTxn(false)} />
+        <button className="btn primary small" onClick={() => logTxn(false)}>Log buy</button>
+        <button className="btn ghost small" onClick={() => logTxn(true)}>Sell</button>
       </div>
     </div>
   );
