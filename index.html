@@ -379,7 +379,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V3.18</div>
+<div class="version">V4.1</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -950,16 +950,24 @@ function BudgetLedger({ mode, session, onSignOut }) {
             </div>
 
             {active.detailed && (
-              <div className="cols">
+              <React.Fragment>
                 <div className="panel">
                   <div className="phead"><div className="t">Money in</div></div>
                   <IncomeTable rows={active.income} onEdit={editRow} onDel={delRow} onAdd={addIncome} total={totalIncome} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} />
                 </div>
                 <div className="panel">
-                  <div className="phead"><div className="t">Money out</div></div>
-                  <ExpenseTable rows={active.expenses} cats={[...spendCats, "Card payment"]} onEdit={editRow} onDel={delRow} onAdd={addExpense} total={totalExpense} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} />
+                  <div className="phead"><div className="t">Savings account</div><div className="hint">paid straight from checking</div></div>
+                  <ExpenseGroup rows={active.expenses.filter((r) => !r.card)} cats={[...spendCats, "Card payment"]} onEdit={editRow} onDel={delRow} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} subLabel="Spent from checking" emptyText="Nothing paid from checking yet — add it below (leave 💳 off)." />
                 </div>
-              </div>
+                <div className="panel">
+                  <div className="phead"><div className="t">Credit card</div><div className="hint">on the card — settled when you pay the bill</div></div>
+                  <ExpenseGroup rows={active.expenses.filter((r) => r.card)} cats={[...spendCats, "Card payment"]} onEdit={editRow} onDel={delRow} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} subLabel="Spent on card" emptyText="Nothing on the card yet — add it below with 💳 on." />
+                </div>
+                <div className="panel">
+                  <div className="phead"><div className="t">Add an expense</div><div className="hint">tap 💳 to put it on the card instead of checking — it files into the right box</div></div>
+                  <AddExpense cats={[...spendCats, "Card payment"]} onAdd={addExpense} />
+                </div>
+              </React.Fragment>
             )}
 
             {active.detailed && linkList.length > 0 && (
@@ -1089,47 +1097,51 @@ function IncomeTable({ rows, onEdit, onDel, onAdd, total, onLink, linkPend, link
   );
 }
 
-function ExpenseTable({ rows, cats, onEdit, onDel, onAdd, total, onLink, linkPend, linkNum, pendNum }) {
+function ExpenseGroup({ rows, cats, onEdit, onDel, onLink, linkPend, linkNum, pendNum, subLabel, emptyText }) {
+  if (!rows || rows.length === 0) return <div className="empty">{emptyText}</div>;
+  const total = sumAmt(rows);
+  return (
+    <React.Fragment>
+      <table className="ledgerT">
+        <thead><tr><th>Item</th><th className="r">Amount</th><th>Category</th><th style={{ width: 30 }}></th><th style={{ width: 30 }}></th><th style={{ width: 30 }}></th><th style={{ width: 30 }}></th></tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id} className={r.excluded ? "excluded" : ""}>
+              <td><input className="cell" value={r.name} onChange={(e) => onEdit("expenses", r.id, "name", e.target.value)} /></td>
+              <td className="r"><input className="cell amt" inputMode="decimal" value={r.amount} onChange={(e) => onEdit("expenses", r.id, "amount", e.target.value)} /></td>
+              <td>
+                <select className="cell" value={r.category} onChange={(e) => onEdit("expenses", r.id, "category", e.target.value)}>
+                  {cats.map((c) => <option key={c} value={c}>{c}</option>)}
+                  {!cats.includes(r.category) && <option value={r.category}>{r.category}</option>}
+                </select>
+              </td>
+              <td><button className={"cardbtn" + (r.card ? " on" : "")} onClick={() => onEdit("expenses", r.id, "card", !r.card)} title={r.card ? "On credit card — tap to move it to checking" : "Move to credit card"} aria-label="Toggle on card">💳</button></td>
+              <td><button className={"lnk" + (r.link ? " on" : "") + (linkPend && linkPend.kind === "expenses" && linkPend.id === r.id ? " pend" : "")} onClick={() => onLink("expenses", r.id)} title={r.link ? "Linked pair " + linkNum(r.link) + " — tap to unlink" : (linkPend ? "Tap to link these two together" : "Link with a reimbursement so they net out")} aria-label="Link rows">{r.link ? linkNum(r.link) : ((linkPend && linkPend.kind === "expenses" && linkPend.id === r.id) ? pendNum : "🔗")}</button></td>
+              <td><button className={"excl" + (r.excluded ? " on" : "")} onClick={() => onEdit("expenses", r.id, "excluded", !r.excluded)} title={r.excluded ? "Excluded from budget — tap to include" : "Exclude from budget (reimbursement / transfer)"} aria-label="Toggle exclude from budget">↔</button></td>
+              <td><button className="del" onClick={() => onDel("expenses", r.id)} aria-label="Delete">×</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="subtotal"><span className="l">{subLabel}</span><span className="v num">{usd(total)}</span></div>
+    </React.Fragment>
+  );
+}
+
+function AddExpense({ cats, onAdd }) {
   const [name, setName] = useState("");
   const [amt, setAmt] = useState("");
   const [cat, setCat] = useState("Misc");
   const [newCard, setNewCard] = useState(false);
   const commit = () => { if (!name.trim() && !amt) return; onAdd(name.trim() || "Expense", amt || "0", cat, newCard); setName(""); setAmt(""); };
-  const onCard = rows.reduce((t, r) => t + ((!r.excluded && r.category !== "Savings" && r.category !== "Card payment" && r.card) ? toNum(r.amount) : 0), 0);
   return (
-    <React.Fragment>
-      {rows.length === 0 ? (<div className="empty">No expenses logged yet. Add one below and pick its category.</div>) : (
-        <table className="ledgerT">
-          <thead><tr><th>Item</th><th className="r">Amount</th><th>Category</th><th style={{ width: 30 }}></th><th style={{ width: 30 }}></th><th style={{ width: 30 }}></th><th style={{ width: 30 }}></th></tr></thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className={r.excluded ? "excluded" : ""}>
-                <td><input className="cell" value={r.name} onChange={(e) => onEdit("expenses", r.id, "name", e.target.value)} /></td>
-                <td className="r"><input className="cell amt" inputMode="decimal" value={r.amount} onChange={(e) => onEdit("expenses", r.id, "amount", e.target.value)} /></td>
-                <td>
-                  <select className="cell" value={r.category} onChange={(e) => onEdit("expenses", r.id, "category", e.target.value)}>
-                    {cats.map((c) => <option key={c} value={c}>{c}</option>)}
-                    {!cats.includes(r.category) && <option value={r.category}>{r.category}</option>}
-                  </select>
-                </td>
-                <td><button className={"cardbtn" + (r.card ? " on" : "")} onClick={() => onEdit("expenses", r.id, "card", !r.card)} title={r.card ? "On credit card — doesn't reduce checking. Tap to make it debit." : "Mark as paid on your credit card"} aria-label="Toggle on card">💳</button></td>
-                <td><button className={"lnk" + (r.link ? " on" : "") + (linkPend && linkPend.kind === "expenses" && linkPend.id === r.id ? " pend" : "")} onClick={() => onLink("expenses", r.id)} title={r.link ? "Linked pair " + linkNum(r.link) + " — tap to unlink" : (linkPend ? "Tap to link these two together" : "Link with a reimbursement so they net out")} aria-label="Link rows">{r.link ? linkNum(r.link) : ((linkPend && linkPend.kind === "expenses" && linkPend.id === r.id) ? pendNum : "🔗")}</button></td>
-                <td><button className={"excl" + (r.excluded ? " on" : "")} onClick={() => onEdit("expenses", r.id, "excluded", !r.excluded)} title={r.excluded ? "Excluded from budget — tap to include" : "Exclude from budget (reimbursement / transfer)"} aria-label="Toggle exclude from budget">↔</button></td>
-                <td><button className="del" onClick={() => onDel("expenses", r.id)} aria-label="Delete">×</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      <div className="addrow">
-        <input className="fname" placeholder="Item (e.g. Groceries)" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
-        <input className="famt" placeholder="0.00" inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
-        <select className="fcat" value={cat} onChange={(e) => setCat(e.target.value)}>{cats.map((c) => <option key={c} value={c}>{c}</option>)}</select>
-        <button className={"cardbtn addc" + (newCard ? " on" : "")} onClick={() => setNewCard(!newCard)} title={newCard ? "New items go on the card — tap for debit" : "Put new items on the card"} aria-label="New item on card">💳</button>
-        <button className="btn primary small" onClick={commit}>Add</button>
-      </div>
-      <div className="subtotal"><span className="l">Total out{onCard > 0.005 ? " · " + usd(onCard) + " card · " + usd(Math.max(0, total - onCard)) + " checking" : ""}</span><span className="v num">{usd(total)}</span></div>
-    </React.Fragment>
+    <div className="addrow">
+      <input className="fname" placeholder="Item (e.g. Groceries)" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
+      <input className="famt" placeholder="0.00" inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
+      <select className="fcat" value={cat} onChange={(e) => setCat(e.target.value)}>{cats.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+      <button className={"cardbtn addc" + (newCard ? " on" : "")} onClick={() => setNewCard(!newCard)} title={newCard ? "Goes on the credit card — tap for checking" : "Put it on the credit card"} aria-label="On card">💳</button>
+      <button className="btn primary small" onClick={commit}>Add</button>
+    </div>
   );
 }
 
