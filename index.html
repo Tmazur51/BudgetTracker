@@ -379,7 +379,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V3.16</div>
+<div class="version">V3.17</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -920,7 +920,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
 
             <div className="stats">
               <div className="stat in"><div className="lab">Money in</div><div className="val num">{usd(totalIncome)}</div></div>
-              <div className="stat out"><div className="lab">Money out</div><div className="val num">{usd(totalExpense)}</div></div>
+              <div className="stat out"><div className="lab">Money out</div><div className="val num">{usd(totalExpense)}</div>{active.detailed && (totalExpense - checkingSpend) > 0.005 ? <div className="sub num">{usd(totalExpense - checkingSpend)} on card · {usd(checkingSpend)} from checking</div> : null}</div>
               <div className={"stat flow " + (cashFlow >= 0 ? "pos" : "neg")}>
                 <div className="lab">Cash flow</div>
                 <div className={"val num " + (cashFlow >= 0 ? "pos" : "neg")}>{cashFlow >= 0 ? "+" : "−"}{usd(Math.abs(cashFlow))}</div>
@@ -1127,7 +1127,7 @@ function ExpenseTable({ rows, cats, onEdit, onDel, onAdd, total, onLink, linkPen
         <button className={"cardbtn addc" + (newCard ? " on" : "")} onClick={() => setNewCard(!newCard)} title={newCard ? "New items go on the card — tap for debit" : "Put new items on the card"} aria-label="New item on card">💳</button>
         <button className="btn primary small" onClick={commit}>Add</button>
       </div>
-      <div className="subtotal"><span className="l">Total out{onCard > 0.005 ? " · " + usd(onCard) + " on card" : ""}</span><span className="v num">{usd(total)}</span></div>
+      <div className="subtotal"><span className="l">Total out{onCard > 0.005 ? " · " + usd(onCard) + " card · " + usd(Math.max(0, total - onCard)) + " checking" : ""}</span><span className="v num">{usd(total)}</span></div>
     </React.Fragment>
   );
 }
