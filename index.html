@@ -379,7 +379,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V4.1</div>
+<div class="version">V4.2</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -956,16 +956,16 @@ function BudgetLedger({ mode, session, onSignOut }) {
                   <IncomeTable rows={active.income} onEdit={editRow} onDel={delRow} onAdd={addIncome} total={totalIncome} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} />
                 </div>
                 <div className="panel">
+                  <div className="phead"><div className="t">Add an expense</div><div className="hint">tap 💳 to put it on the card instead of checking — it files into the right box below</div></div>
+                  <AddExpense cats={[...spendCats, "Card payment"]} onAdd={addExpense} />
+                </div>
+                <div className="panel">
                   <div className="phead"><div className="t">Savings account</div><div className="hint">paid straight from checking</div></div>
-                  <ExpenseGroup rows={active.expenses.filter((r) => !r.card)} cats={[...spendCats, "Card payment"]} onEdit={editRow} onDel={delRow} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} subLabel="Spent from checking" emptyText="Nothing paid from checking yet — add it below (leave 💳 off)." />
+                  <ExpenseGroup rows={active.expenses.filter((r) => !r.card)} cats={[...spendCats, "Card payment"]} onEdit={editRow} onDel={delRow} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} subLabel="Spent from checking" emptyText="Nothing paid from checking yet — add it above (leave 💳 off)." />
                 </div>
                 <div className="panel">
                   <div className="phead"><div className="t">Credit card</div><div className="hint">on the card — settled when you pay the bill</div></div>
-                  <ExpenseGroup rows={active.expenses.filter((r) => r.card)} cats={[...spendCats, "Card payment"]} onEdit={editRow} onDel={delRow} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} subLabel="Spent on card" emptyText="Nothing on the card yet — add it below with 💳 on." />
-                </div>
-                <div className="panel">
-                  <div className="phead"><div className="t">Add an expense</div><div className="hint">tap 💳 to put it on the card instead of checking — it files into the right box</div></div>
-                  <AddExpense cats={[...spendCats, "Card payment"]} onAdd={addExpense} />
+                  <ExpenseGroup rows={active.expenses.filter((r) => r.card)} cats={[...spendCats, "Card payment"]} onEdit={editRow} onDel={delRow} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} subLabel="Spent on card" emptyText="Nothing on the card yet — add it above with 💳 on." />
                 </div>
               </React.Fragment>
             )}
@@ -1071,7 +1071,12 @@ function IncomeTable({ rows, onEdit, onDel, onAdd, total, onLink, linkPend, link
   const commit = () => { if (!src.trim() && !amt) return; onAdd(src.trim() || "Income", amt || "0"); setSrc(""); setAmt(""); };
   return (
     <React.Fragment>
-      {rows.length === 0 ? (<div className="empty">No income logged yet. Add your first source below.</div>) : (
+      <div className="addrow">
+        <input className="fname" placeholder="Source (e.g. Curtiss-Wright)" value={src} onChange={(e) => setSrc(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
+        <input className="famt" placeholder="0.00" inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
+        <button className="btn primary small" onClick={commit}>Add</button>
+      </div>
+      {rows.length === 0 ? (<div className="empty">No income logged yet — add your first source above.</div>) : (
         <table className="ledgerT">
           <thead><tr><th>Source</th><th className="r">Amount</th><th style={{ width: 34 }}></th><th style={{ width: 34 }}></th><th style={{ width: 34 }}></th></tr></thead>
           <tbody>
@@ -1087,11 +1092,6 @@ function IncomeTable({ rows, onEdit, onDel, onAdd, total, onLink, linkPend, link
           </tbody>
         </table>
       )}
-      <div className="addrow">
-        <input className="fname" placeholder="Source (e.g. Curtiss-Wright)" value={src} onChange={(e) => setSrc(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
-        <input className="famt" placeholder="0.00" inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
-        <button className="btn primary small" onClick={commit}>Add</button>
-      </div>
       <div className="subtotal"><span className="l">Total in</span><span className="v num">{usd(total)}</span></div>
     </React.Fragment>
   );
