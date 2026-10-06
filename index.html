@@ -391,7 +391,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V4.3</div>
+<div class="version">V4.4</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -481,17 +481,17 @@ function effectiveRows(m) {
   const income = [], expenses = [];
   (m.income || []).forEach((r) => {
     if (r.excluded) { income.push(r); return; }
-    if (r.link) { const g = groups[r.link] || (groups[r.link] = { inc: 0, exp: 0, cat: null, card: false }); g.inc += toNum(r.amount); }
+    if (r.link) { const g = groups[r.link] || (groups[r.link] = { inc: 0, exp: 0, cat: null, cardId: "" }); g.inc += toNum(r.amount); }
     else income.push(r);
   });
   (m.expenses || []).forEach((r) => {
     if (r.excluded) { expenses.push(r); return; }
-    if (r.link) { const g = groups[r.link] || (groups[r.link] = { inc: 0, exp: 0, cat: null, card: false }); g.exp += toNum(r.amount); if (r.card) g.card = true; if (r.category && r.category !== "Savings" && !g.cat) g.cat = r.category; }
+    if (r.link) { const g = groups[r.link] || (groups[r.link] = { inc: 0, exp: 0, cat: null, cardId: "" }); g.exp += toNum(r.amount); if (r.cardId && !g.cardId) g.cardId = r.cardId; if (r.category && r.category !== "Savings" && !g.cat) g.cat = r.category; }
     else expenses.push(r);
   });
   Object.keys(groups).forEach((id) => {
     const g = groups[id], net = g.exp - g.inc;
-    if (net > 0.005) expenses.push({ id: "net_" + id, name: "net (linked)", amount: net, category: g.cat || "Misc", excluded: false, card: !!g.card });
+    if (net > 0.005) expenses.push({ id: "net_" + id, name: "net (linked)", amount: net, category: g.cat || "Misc", excluded: false, cardId: g.cardId || "" });
     else if (net < -0.005) income.push({ id: "net_" + id, source: "net (linked)", amount: -net, excluded: false });
   });
   return { income, expenses };
@@ -502,7 +502,7 @@ function splitSpend(rows) {
     if (r.excluded || r.category === "Savings") return;
     const amt = toNum(r.amount);
     budget += amt;
-    if (!r.card) checking += amt;
+    if (!r.cardId) checking += amt;
   });
   return { budget, checking };
 }
@@ -576,6 +576,8 @@ function migrate(s) {
   if (!Array.isArray(s.roth.contributions)) s.roth.contributions = [];
   if (!s.settings) s.settings = {};
   if (s.settings.finnhubKey == null) s.settings.finnhubKey = "";
+  const _fcId = (inv.accounts.find((a) => a.type === "credit") || {}).id || "";
+  Object.keys(s.months || {}).forEach((k) => { const mm = s.months[k]; if (Array.isArray(mm.expenses)) mm.expenses.forEach((e) => { if (e.card && e.cardId == null && _fcId) e.cardId = _fcId; }); });
   return s;
 }
 
@@ -743,6 +745,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const investTotal = accounts.filter((a) => a.type === "investment").reduce((s, a) => s + acctVal(a), 0);
   const rothValue = accounts.filter((a) => a.type === "roth").reduce((s, a) => s + acctVal(a), 0);
   const creditOwed = accounts.filter((a) => a.type === "credit").reduce((s, a) => s + acctVal(a), 0);
+  const creditCards = accounts.filter((a) => a.type === "credit");
   const savingsCombined = hysaTotal + investTotal;
   const roth = state.roth || { limit: 7500, contributions: [] };
 
@@ -751,7 +754,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const totalExpense = active.detailed ? sumAmt(activeEff.expenses) : active.summary.expense;
   const cardPayment = toNum(active.cardPayment);
   const checkingSpend = active.detailed ? splitSpend(activeEff.expenses).checking : totalExpense;
-  const onCardSpend = active.detailed ? activeEff.expenses.reduce((t, r) => t + ((!r.excluded && r.category !== "Savings" && r.category !== "Card payment" && r.card) ? toNum(r.amount) : 0), 0) : 0;
+  const onCardSpend = active.detailed ? activeEff.expenses.reduce((t, r) => t + ((!r.excluded && r.category !== "Savings" && r.category !== "Card payment" && r.cardId) ? toNum(r.amount) : 0), 0) : 0;
   const cashFlow = totalIncome - totalExpense;
   const endBal = active.detailed ? (toNum(active.startingBalance) + totalIncome - checkingSpend - savedThisMonth - cardPayment)
     : (active.endingBalance != null ? active.endingBalance : toNum(active.startingBalance) + cashFlow);
@@ -789,7 +792,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
     }
   });
   const addIncome = (source, amount) => mutate((s) => { s.months[s.activeMonth].income.push({ id: uid(), source, amount }); });
-  const addExpense = (name, amount, category, card) => mutate((s) => { s.months[s.activeMonth].expenses.push({ id: uid(), name, amount, category, card: !!card }); });
+  const addExpense = (name, amount, category, cardId) => mutate((s) => { s.months[s.activeMonth].expenses.push({ id: uid(), name, amount, category, cardId: cardId || "" }); });
   const editRow = (list, id, field, value) => mutate((s) => { const row = s.months[s.activeMonth][list].find((r) => r.id === id); if (row) row[field] = value; });
   const delRow = (list, id) => mutate((s) => { const m = s.months[s.activeMonth]; m[list] = m[list].filter((r) => r.id !== id); });
   const toggleLink = (kind, id) => {
@@ -968,17 +971,25 @@ function BudgetLedger({ mode, session, onSignOut }) {
                   <IncomeTable rows={active.income} onEdit={editRow} onDel={delRow} onAdd={addIncome} total={totalIncome} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} />
                 </div>
                 <div className="panel">
-                  <div className="phead"><div className="t">Add an expense</div><div className="hint">tap 💳 to put it on the card instead of checking — it files into the right box below</div></div>
-                  <AddExpense cats={[...spendCats, "Card payment"]} onAdd={addExpense} />
+                  <div className="phead"><div className="t">Add an expense</div><div className="hint">pick where you paid (checking or a card) — it files into the matching box below</div></div>
+                  <AddExpense cats={[...spendCats, "Card payment"]} cards={creditCards} onAdd={addExpense} />
                 </div>
                 <div className="panel">
                   <div className="phead"><div className="t">Savings account</div><div className="hint">paid straight from checking</div></div>
-                  <ExpenseGroup rows={active.expenses.filter((r) => !r.card)} cats={[...spendCats, "Card payment"]} onEdit={editRow} onDel={delRow} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} subLabel="Spent from checking" emptyText="Nothing paid from checking yet — add it above (leave 💳 off)." />
+                  <ExpenseGroup rows={active.expenses.filter((r) => !r.cardId)} cats={[...spendCats, "Card payment"]} cards={creditCards} onEdit={editRow} onDel={delRow} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} subLabel="Spent from checking" emptyText="Nothing from checking yet — add it above with 'Checking' selected." />
                 </div>
-                <div className="panel">
-                  <div className="phead"><div className="t">Credit card</div><div className="hint">on the card — settled when you pay the bill</div></div>
-                  <ExpenseGroup rows={active.expenses.filter((r) => r.card)} cats={[...spendCats, "Card payment"]} onEdit={editRow} onDel={delRow} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} subLabel="Spent on card" emptyText="Nothing on the card yet — add it above with 💳 on." />
-                </div>
+                {creditCards.map((card) => (
+                  <div className="panel" key={card.id}>
+                    <div className="phead"><div className="t">{card.name || "Credit card"}</div><div className="hint">on this card — settled when you pay its bill</div></div>
+                    <ExpenseGroup rows={active.expenses.filter((r) => r.cardId === card.id)} cats={[...spendCats, "Card payment"]} cards={creditCards} onEdit={editRow} onDel={delRow} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} subLabel={"Spent on " + (card.name || "card")} emptyText={"Nothing on " + (card.name || "this card") + " yet — add it above and choose it."} />
+                  </div>
+                ))}
+                {active.expenses.some((r) => r.cardId && !creditCards.some((c) => c.id === r.cardId)) && (
+                  <div className="panel">
+                    <div className="phead"><div className="t">Other card</div><div className="hint">tagged to a card that's no longer listed — reassign it or re-add the card on the Cash tab</div></div>
+                    <ExpenseGroup rows={active.expenses.filter((r) => r.cardId && !creditCards.some((c) => c.id === r.cardId))} cats={[...spendCats, "Card payment"]} cards={creditCards} onEdit={editRow} onDel={delRow} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} subLabel="Spent on card" emptyText="" />
+                  </div>
+                )}
               </React.Fragment>
             )}
 
@@ -1109,13 +1120,13 @@ function IncomeTable({ rows, onEdit, onDel, onAdd, total, onLink, linkPend, link
   );
 }
 
-function ExpenseGroup({ rows, cats, onEdit, onDel, onLink, linkPend, linkNum, pendNum, subLabel, emptyText }) {
+function ExpenseGroup({ rows, cats, cards, onEdit, onDel, onLink, linkPend, linkNum, pendNum, subLabel, emptyText }) {
   if (!rows || rows.length === 0) return <div className="empty">{emptyText}</div>;
   const total = sumAmt(rows);
   return (
     <React.Fragment>
       <table className="ledgerT">
-        <thead><tr><th>Item</th><th className="r">Amount</th><th>Category</th><th style={{ width: 30 }}></th><th style={{ width: 30 }}></th><th style={{ width: 30 }}></th><th style={{ width: 30 }}></th></tr></thead>
+        <thead><tr><th>Item</th><th className="r">Amount</th><th>Category</th><th>Paid with</th><th style={{ width: 30 }}></th><th style={{ width: 30 }}></th><th style={{ width: 30 }}></th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} className={r.excluded ? "excluded" : ""}>
@@ -1127,7 +1138,13 @@ function ExpenseGroup({ rows, cats, onEdit, onDel, onLink, linkPend, linkNum, pe
                   {!cats.includes(r.category) && <option value={r.category}>{r.category}</option>}
                 </select>
               </td>
-              <td><button className={"cardbtn" + (r.card ? " on" : "")} onClick={() => onEdit("expenses", r.id, "card", !r.card)} title={r.card ? "On credit card — tap to move it to checking" : "Move to credit card"} aria-label="Toggle on card">💳</button></td>
+              <td>
+                <select className="cell" value={r.cardId || ""} onChange={(e) => onEdit("expenses", r.id, "cardId", e.target.value)}>
+                  <option value="">Checking</option>
+                  {cards.map((c) => <option key={c.id} value={c.id}>{c.name || "Card"}</option>)}
+                  {r.cardId && !cards.some((c) => c.id === r.cardId) && <option value={r.cardId}>Card</option>}
+                </select>
+              </td>
               <td><button className={"lnk" + (r.link ? " on" : "") + (linkPend && linkPend.kind === "expenses" && linkPend.id === r.id ? " pend" : "")} onClick={() => onLink("expenses", r.id)} title={r.link ? "Linked pair " + linkNum(r.link) + " — tap to unlink" : (linkPend ? "Tap to link these two together" : "Link with a reimbursement so they net out")} aria-label="Link rows">{r.link ? linkNum(r.link) : ((linkPend && linkPend.kind === "expenses" && linkPend.id === r.id) ? pendNum : "🔗")}</button></td>
               <td><button className={"excl" + (r.excluded ? " on" : "")} onClick={() => onEdit("expenses", r.id, "excluded", !r.excluded)} title={r.excluded ? "Excluded from budget — tap to include" : "Exclude from budget (reimbursement / transfer)"} aria-label="Toggle exclude from budget">↔</button></td>
               <td><button className="del" onClick={() => onDel("expenses", r.id)} aria-label="Delete">×</button></td>
@@ -1140,18 +1157,18 @@ function ExpenseGroup({ rows, cats, onEdit, onDel, onLink, linkPend, linkNum, pe
   );
 }
 
-function AddExpense({ cats, onAdd }) {
+function AddExpense({ cats, cards, onAdd }) {
   const [name, setName] = useState("");
   const [amt, setAmt] = useState("");
   const [cat, setCat] = useState("Misc");
-  const [newCard, setNewCard] = useState(false);
-  const commit = () => { if (!name.trim() && !amt) return; onAdd(name.trim() || "Expense", amt || "0", cat, newCard); setName(""); setAmt(""); };
+  const [cardId, setCardId] = useState("");
+  const commit = () => { if (!name.trim() && !amt) return; onAdd(name.trim() || "Expense", amt || "0", cat, cardId); setName(""); setAmt(""); };
   return (
     <div className="addrow">
       <input className="fname" placeholder="Item (e.g. Groceries)" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
       <input className="famt" placeholder="0.00" inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} onKeyDown={(e) => e.key === "Enter" && commit()} />
       <select className="fcat" value={cat} onChange={(e) => setCat(e.target.value)}>{cats.map((c) => <option key={c} value={c}>{c}</option>)}</select>
-      <button className={"cardbtn addc" + (newCard ? " on" : "")} onClick={() => setNewCard(!newCard)} title={newCard ? "Goes on the credit card — tap for checking" : "Put it on the credit card"} aria-label="On card">💳</button>
+      <select className="fcat" value={cardId} onChange={(e) => setCardId(e.target.value)}><option value="">Checking</option>{cards.map((c) => <option key={c.id} value={c.id}>{c.name || "Card"}</option>)}</select>
       <button className="btn primary small" onClick={commit}>Add</button>
     </div>
   );
