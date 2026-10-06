@@ -357,6 +357,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 .led .netfig.good { color:var(--green); }
 .led .netfig.bad { color:var(--red); }
 .led .netfig.flat { color:var(--muted); }
+.led .linkbanner { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; background:var(--brand-tint); border:1px solid var(--brand); border-radius:12px; padding:11px 14px; margin-bottom:12px; font-family:var(--font-d); font-size:12.5px; color:var(--brand-2); }
 .led .addacct { display:flex; gap:8px; align-items:center; margin-top:4px; }
 .led .addacct input { flex:1; border:1px solid var(--line-2); border-radius:8px; padding:9px 10px; font-family:var(--font-b); font-size:13px; background:#fff; color:var(--ink); }
 .led .addacct input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px var(--brand-tint); }
@@ -391,7 +392,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V4.4</div>
+<div class="version">V4.5</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -799,6 +800,17 @@ function BudgetLedger({ mode, session, onSignOut }) {
     const arr = kind === "income" ? active.income : active.expenses;
     const row = (arr || []).find((r) => r.id === id);
     if (!row) return;
+    if (linkPend) {
+      if (linkPend.kind === kind && linkPend.id === id) { setLinkPend(null); return; } // tap the active row again = done
+      mutate((s) => {
+        const m = s.months[s.activeMonth];
+        const find = (k, i) => (k === "income" ? m.income : m.expenses).find((r) => r.id === i);
+        const a = find(linkPend.kind, linkPend.id), b = find(kind, id);
+        if (a && b) { const gid = a.link || b.link || uid(); a.link = gid; b.link = gid; }
+      });
+      setLinkPend({ kind, id }); // advance the anchor so the next tap adds to the same group
+      return;
+    }
     if (row.link) {
       const gid = row.link;
       mutate((s) => {
@@ -807,21 +819,11 @@ function BudgetLedger({ mode, session, onSignOut }) {
         const left = [...m.income, ...m.expenses].filter((r) => r.link === gid);
         if (left.length === 1) delete left[0].link;
       });
-      setLinkPend(null);
       return;
     }
-    if (!linkPend) { setLinkPend({ kind, id }); return; }
-    if (linkPend.kind === kind && linkPend.id === id) { setLinkPend(null); return; }
-    mutate((s) => {
-      const m = s.months[s.activeMonth];
-      const find = (k, i) => (k === "income" ? m.income : m.expenses).find((r) => r.id === i);
-      const a = find(linkPend.kind, linkPend.id), b = find(kind, id);
-      if (!a || !b) return;
-      const gid = a.link || b.link || uid();
-      a.link = gid; b.link = gid;
-    });
-    setLinkPend(null);
+    setLinkPend({ kind, id });
   };
+
   const linkOrder = [];
   if (active.detailed) [...(active.income || []), ...(active.expenses || [])].forEach((r) => { if (r.link && linkOrder.indexOf(r.link) === -1) linkOrder.push(r.link); });
   const linkNum = (gid) => { const i = linkOrder.indexOf(gid); return i === -1 ? linkOrder.length + 1 : i + 1; };
@@ -964,6 +966,12 @@ function BudgetLedger({ mode, session, onSignOut }) {
               ) : (<div className="empty">This month was imported as monthly totals only. Add its transactions to see the category breakdown.</div>)}
             </div>
 
+            {active.detailed && linkPend && (
+              <div className="linkbanner">
+                <span>Linking group {pendNum} — tap 🔗 on each row (an expense and every reimbursement) to add it. Tap the highlighted one again, or Done, to finish.</span>
+                <button className="btn primary small" onClick={() => setLinkPend(null)}>Done</button>
+              </div>
+            )}
             {active.detailed && (
               <React.Fragment>
                 <div className="panel">
@@ -1013,7 +1021,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
             )}
 
             {active.detailed && (
-              <div className="passhint">Money that isn't spending: the <b>↔</b> button drops a row out entirely (a pure pass-through). The <b>🔗</b> button <b>links</b> a reimbursement to its expense so they net — tap 🔗 on the expense, then 🔗 on the repayment. Equal amounts cancel; if they differ, only the difference counts (shown in the net-outs box).</div>
+              <div className="passhint">Money that isn't spending: the <b>↔</b> button drops a row out entirely (a pure pass-through). The <b>🔗</b> button <b>links</b> reimbursements to an expense so they net — tap 🔗 on the expense, then 🔗 on each repayment (one or several), then <b>Done</b>. The group nets to the expense minus all the repayments; only that difference counts (shown in the net-outs box). To unlink later, tap a linked 🔗 when you're not mid-link.</div>
             )}
           </React.Fragment>
         )}
