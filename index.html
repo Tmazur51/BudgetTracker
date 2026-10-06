@@ -340,6 +340,10 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 .led .hsumfill { height:100%; background:var(--brand); border-radius:6px; }
 .led .hsummeta { display:flex; justify-content:space-between; align-items:baseline; margin-top:5px; }
 .led .hsumpct { font-family:var(--font-m); font-size:11.5px; color:var(--muted); }
+.led .segbtns { display:inline-flex; border:1px solid var(--line-2); border-radius:8px; overflow:hidden; }
+.led .seg { border:0; background:var(--card); color:var(--muted); font-family:var(--font-d); font-weight:600; font-size:11.5px; padding:5px 11px; cursor:pointer; }
+.led .seg + .seg { border-left:1px solid var(--line-2); }
+.led .seg.on { background:var(--brand); color:#fff; }
 .led .backbtn { border:1px solid var(--line-2); background:var(--card); color:var(--brand); font-family:var(--font-d); font-weight:600; font-size:12.5px; border-radius:9px; padding:8px 12px; cursor:pointer; margin-bottom:12px; }
 .led .backbtn:hover { border-color:var(--brand); background:var(--brand-tint); }
 .led .acctgroup { margin-bottom:16px; }
@@ -410,7 +414,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V4.6</div>
+<div class="version">V4.7</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -889,16 +893,18 @@ function BudgetLedger({ mode, session, onSignOut }) {
   doRefreshRef.current = refreshPrices;
   const recordHistory = () => {
     if (!(investTotal > 0)) return;
+    const investCost = accounts.filter((a) => a.type === "investment").reduce((s2, a) => s2 + (a.holdings || []).reduce((t, h) => t + holdCost(h), 0), 0);
     mutate((s) => {
       if (!s.investing) return;
       if (!Array.isArray(s.investing.history)) s.investing.history = [];
       const d = new Date();
       const today = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
       const v = Math.round(investTotal * 100) / 100;
+      const c = Math.round(investCost * 100) / 100;
       const hist = s.investing.history;
       const last = hist[hist.length - 1];
-      if (last && last.t === today) last.v = v;
-      else hist.push({ t: today, v });
+      if (last && last.t === today) { last.v = v; last.c = c; }
+      else hist.push({ t: today, v, c });
       if (hist.length > 400) hist.splice(0, hist.length - 400);
     });
   };
@@ -1804,6 +1810,7 @@ function InvestmentsPage(props) {
   const [contrib, setContrib] = useState("500");
   const [rate, setRate] = useState("7");
   const [years, setYears] = useState("10");
+  const [histMode, setHistMode] = useState("value");
   const list = (props.accounts || []).filter((a) => a.type === "investment");
   const invested = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + holdCost(h), 0), 0);
   const value = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + holdValue(h), 0), 0);
@@ -1845,9 +1852,13 @@ function InvestmentsPage(props) {
       <div className="panel">
         <div className="phead">
           <div className="t">Investments over time</div>
-          <div className="hint">records automatically each time you open the app</div>
+          <div className="segbtns">
+            <button className={"seg" + (histMode === "value" ? " on" : "")} onClick={() => setHistMode("value")}>Value</button>
+            <button className={"seg" + (histMode === "profit" ? " on" : "")} onClick={() => setHistMode("profit")}>Profit</button>
+          </div>
         </div>
-        <HistoryChart points={ivHist} color="#14794a" areaFill="#dcf0e5" emptyMsg={"Nothing plotted yet — this fills in on its own each time you open the app, once you're holding something."} />
+        <HistoryChart points={histMode === "profit" ? ivHist.filter((p) => p.c != null).map((p) => ({ t: p.t, v: Math.round((toNum(p.v) - toNum(p.c)) * 100) / 100 })) : ivHist.map((p) => ({ t: p.t, v: toNum(p.v) }))} color="#14794a" areaFill="#dcf0e5" emptyMsg={histMode === "profit" ? "No profit history yet — it starts recording from now, each time you open the app." : "Nothing plotted yet — this fills in on its own each time you open the app, once you're holding something."} />
+        <div className="hint" style={{ marginTop: 10 }}>{histMode === "profit" ? "Your gain (value minus what you invested) at each check-in." : "Total value of your investments, recorded each time you open the app."}</div>
       </div>
       <div className="panel">
         <div className="phead"><div className="t">Holdings</div><div className="hint">tap one for its price, buy/sell log &amp; trailing stop</div></div>
