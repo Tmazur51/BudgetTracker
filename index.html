@@ -414,7 +414,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V4.7</div>
+<div class="version">V4.8</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -498,7 +498,8 @@ async function cloudSave(uid, state) {
 const usd = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n || 0);
 const usd0 = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n || 0);
 const uid = () => Math.random().toString(36).slice(2, 9);
-const sumAmt = (rows) => rows.reduce((a, r) => a + ((r.excluded || r.category === "Savings" || r.category === "Card payment") ? 0 : toNum(r.amount)), 0);
+const sumAmt = (rows) => rows.reduce((a, r) => a + ((r.excluded || r.transfer || r.category === "Savings" || r.category === "Card payment") ? 0 : toNum(r.amount)), 0);
+const incomeIntoChecking = (rows) => rows.reduce((a, r) => a + (r.excluded ? 0 : toNum(r.amount)), 0);
 function effectiveRows(m) {
   const groups = {};
   const income = [], expenses = [];
@@ -778,10 +779,11 @@ function BudgetLedger({ mode, session, onSignOut }) {
   const totalIncome = active.detailed ? sumAmt(activeEff.income) : active.summary.income;
   const totalExpense = active.detailed ? sumAmt(activeEff.expenses) : active.summary.expense;
   const cardPayment = toNum(active.cardPayment);
+  const checkingIn = active.detailed ? incomeIntoChecking(activeEff.income) : totalIncome;
   const checkingSpend = active.detailed ? splitSpend(activeEff.expenses).checking : totalExpense;
   const onCardSpend = active.detailed ? activeEff.expenses.reduce((t, r) => t + ((!r.excluded && r.category !== "Savings" && r.category !== "Card payment" && r.cardId) ? toNum(r.amount) : 0), 0) : 0;
   const cashFlow = totalIncome - totalExpense;
-  const endBal = active.detailed ? (toNum(active.startingBalance) + totalIncome - checkingSpend - savedThisMonth - cardPayment)
+  const endBal = active.detailed ? (toNum(active.startingBalance) + checkingIn - checkingSpend - savedThisMonth - cardPayment)
     : (active.endingBalance != null ? active.endingBalance : toNum(active.startingBalance) + cashFlow);
   const netWorthNow = hysaTotal + investTotal + rothValue + endBal - creditOwed;
 
@@ -1001,7 +1003,7 @@ function BudgetLedger({ mode, session, onSignOut }) {
             {active.detailed && (
               <React.Fragment>
                 <div className="panel">
-                  <div className="phead"><div className="t">Money in</div></div>
+                  <div className="phead"><div className="t">Money in</div><div className="hint">set a row to <b>Transfer in</b> for money moved from savings — it lands in checking but isn't counted as income</div></div>
                   <IncomeTable rows={active.income} onEdit={editRow} onDel={delRow} onAdd={addIncome} total={totalIncome} onLink={toggleLink} linkPend={linkPend} linkNum={linkNum} pendNum={pendNum} />
                 </div>
                 <div className="panel">
@@ -1126,6 +1128,7 @@ function IncomeTable({ rows, onEdit, onDel, onAdd, total, onLink, linkPend, link
   const [src, setSrc] = useState("");
   const [amt, setAmt] = useState("");
   const commit = () => { if (!src.trim() && !amt) return; onAdd(src.trim() || "Income", amt || "0"); setSrc(""); setAmt(""); };
+  const xferIn = rows.reduce((t, r) => t + ((!r.excluded && r.transfer) ? toNum(r.amount) : 0), 0);
   return (
     <React.Fragment>
       <div className="addrow">
@@ -1135,21 +1138,27 @@ function IncomeTable({ rows, onEdit, onDel, onAdd, total, onLink, linkPend, link
       </div>
       {rows.length === 0 ? (<div className="empty">No income logged yet — add your first source above.</div>) : (
         <table className="ledgerT">
-          <thead><tr><th>Source</th><th className="r">Amount</th><th style={{ width: 34 }}></th><th style={{ width: 34 }}></th><th style={{ width: 34 }}></th></tr></thead>
+          <thead><tr><th>Source</th><th className="r">Amount</th><th>Type</th><th style={{ width: 34 }}></th><th style={{ width: 34 }}></th><th style={{ width: 34 }}></th></tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} className={r.excluded ? "excluded" : ""}>
                 <td><input className="cell" value={r.source} onChange={(e) => onEdit("income", r.id, "source", e.target.value)} /></td>
                 <td className="r"><input className="cell amt" inputMode="decimal" value={r.amount} onChange={(e) => onEdit("income", r.id, "amount", e.target.value)} /></td>
+                <td>
+                  <select className="cell" value={r.transfer ? "transfer" : "income"} onChange={(e) => onEdit("income", r.id, "transfer", e.target.value === "transfer")}>
+                    <option value="income">Income</option>
+                    <option value="transfer">Transfer in</option>
+                  </select>
+                </td>
                 <td><button className={"lnk" + (r.link ? " on" : "") + (linkPend && linkPend.kind === "income" && linkPend.id === r.id ? " pend" : "")} onClick={() => onLink("income", r.id)} title={r.link ? "Linked pair " + linkNum(r.link) + " — tap to unlink" : (linkPend ? "Tap to link these two together" : "Link with a reimbursement so they net out")} aria-label="Link rows">{r.link ? linkNum(r.link) : ((linkPend && linkPend.kind === "income" && linkPend.id === r.id) ? pendNum : "🔗")}</button></td>
-                <td><button className={"excl" + (r.excluded ? " on" : "")} onClick={() => onEdit("income", r.id, "excluded", !r.excluded)} title={r.excluded ? "Excluded from budget — tap to include" : "Exclude from budget (reimbursement / transfer)"} aria-label="Toggle exclude from budget">↔</button></td>
+                <td><button className={"excl" + (r.excluded ? " on" : "")} onClick={() => onEdit("income", r.id, "excluded", !r.excluded)} title={r.excluded ? "Excluded entirely — tap to include" : "Drop this row out of everything (pure pass-through)"} aria-label="Toggle exclude">↔</button></td>
                 <td><button className="del" onClick={() => onDel("income", r.id)} aria-label="Delete">×</button></td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
-      <div className="subtotal"><span className="l">Total in</span><span className="v num">{usd(total)}</span></div>
+      <div className="subtotal"><span className="l">Total in{xferIn > 0.005 ? " · " + usd(xferIn) + " transferred in (not income)" : ""}</span><span className="v num">{usd(total)}</span></div>
     </React.Fragment>
   );
 }
@@ -1949,7 +1958,7 @@ function MonthsModal({ existing, activeKey, onClose, onSelect, onDelete, onCreat
   const lastEff = lastKey && existing[lastKey].detailed ? effectiveRows(existing[lastKey]) : null;
   const lastEnd = lastKey
     ? (existing[lastKey].detailed
-        ? toNum(existing[lastKey].startingBalance) + sumAmt(lastEff.income) - splitSpend(lastEff.expenses).checking - toNum(existing[lastKey].toSavings) - toNum(existing[lastKey].cardPayment)
+        ? toNum(existing[lastKey].startingBalance) + incomeIntoChecking(lastEff.income) - splitSpend(lastEff.expenses).checking - toNum(existing[lastKey].toSavings) - toNum(existing[lastKey].cardPayment)
         : (existing[lastKey].endingBalance != null ? existing[lastKey].endingBalance : 0))
     : 0;
   const now = new Date();
