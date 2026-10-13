@@ -414,7 +414,7 @@ html, body { margin: 0; padding: 0; background: #e8edf1; }
 </head>
 <body>
 <!-- App version — bump this string when we ship changes -->
-<div class="version">V4.8</div>
+<div class="version">V4.9</div>
 <div id="root"><div class="boot">Loading CashFlux…</div></div>
 
 <script>
@@ -1825,6 +1825,8 @@ function InvestmentsPage(props) {
   const value = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + holdValue(h), 0), 0);
   const gain = value - invested;
   const gainPct = invested > 0 ? gain / invested * 100 : 0;
+  const realized = list.reduce((s, a) => s + (a.holdings || []).reduce((t, h) => t + holdRealized(h), 0), 0);
+  const allTime = gain + realized;
   const ivHist = props.history || [];
 
   if (props.holdingView) {
@@ -1853,10 +1855,17 @@ function InvestmentsPage(props) {
         <div className="tile brand"><div className="tlab">Value now</div><div className="tval num brand">{usd(value)}</div></div>
         <div className="tile"><div className="tlab">Invested</div><div className="tval num">{usd(invested)}</div></div>
         <div className={"tile " + (gain >= 0 ? "pos" : "neg")}>
-          <div className="tlab">Gain / loss</div>
+          <div className="tlab">{Math.abs(realized) > 0.005 ? "Gain / loss now" : "Gain / loss"}</div>
           <div className={"tval num " + (gain >= 0 ? "pos" : "neg")}>{gain >= 0 ? "+" : "−"}{usd(Math.abs(gain))}</div>
-          <div className="tsub">{invested > 0 ? (gain >= 0 ? "+" : "−") + Math.abs(gainPct).toFixed(1) + "% on what you invested" : "add holdings to track"}</div>
+          <div className="tsub">{invested > 0 ? (gain >= 0 ? "+" : "−") + Math.abs(gainPct).toFixed(1) + "% on what you hold" : "add holdings to track"}</div>
         </div>
+        {Math.abs(realized) > 0.005 && (
+          <div className={"tile " + (allTime >= 0 ? "pos" : "neg")}>
+            <div className="tlab">All-time profit</div>
+            <div className={"tval num " + (allTime >= 0 ? "pos" : "neg")}>{allTime >= 0 ? "+" : "−"}{usd(Math.abs(allTime))}</div>
+            <div className="tsub">{(gain >= 0 ? "+" : "−") + usd(Math.abs(gain))} now · {(realized >= 0 ? "+" : "−") + usd(Math.abs(realized))} from sells</div>
+          </div>
+        )}
       </div>
       <div className="panel">
         <div className="phead">
